@@ -1,14 +1,14 @@
 [collaborative_novel_engine_企画書_v1.1.md](https://github.com/user-attachments/files/26380997/collaborative_novel_engine_._v1.1.md)
 # 協調小説エンジン（Collaborative Novel Engine）
-## 開発企画書 v1.1
+## 開発企画書 v1.2
 
 | 項目 | 内容 |
 |------|------|
 | プロジェクト名 | 協調小説エンジン（Collaborative Novel Engine） |
 | 作成日 | 2025年　　月　　日 |
-| バージョン | v1.1 |
+| バージョン | v1.2 |
 | 機密区分 | 社外秘 |
-| ステータス | 更新済み（公開先変更反映） |
+| ステータス | 更新済み（ホスティング確定：Vercel Free） |
 
 ---
 
@@ -59,13 +59,13 @@
 | Cursor | メインIDE（AI補完） | Claude Codeと深く統合。AIペアプロで開発速度を最大化 |
 | Claude Code | AIコーディングアシスタント | コード生成・レビュー・リファクタリングを自動化 |
 | GitHub | ソースコード管理・CI/CD連携起点 | Cloud Buildとのネイティブ連携。PRベース開発フロー |
-| Google Cloud Build | CI/CDパイプライン | GitHubプッシュ → 自動テスト → 公開プラットフォームへデプロイ |
+| Google Cloud Build | CI/CDパイプライン | GitHubプッシュ → 自動テスト → Vercelへデプロイ |
 
 ### 3-2. フロントエンド
 
 | 技術 | バージョン | 用途 |
 |------|-----------|------|
-| Next.js | 14（App Router） | SSR + CSR ハイブリッド。プラットフォーム連携デプロイに対応 |
+| Next.js | 14（App Router） | SSR + CSR ハイブリッド。Vercelデプロイ最適 |
 | TypeScript | 5.x | 型安全性。Claude Codeとの親和性が高い |
 | Tailwind CSS | 3.x | デザイン実装速度の最大化 |
 | Framer Motion | 11.x | ターン切り替えアニメーション、投稿演出 |
@@ -77,8 +77,8 @@
 |------|---------|------|
 | Supabase | PostgreSQL + Auth + Realtime | DB・認証・WebSocketを一括管理。OSS |
 | Upstash Redis | Serverless Redis | ターン状態・タイマーのリアルタイム管理 |
-| 公開プラットフォーム | GitHub連携ホスティング | GitHubリポジトリと連携してアプリを配信。Vercel不要 |
-| Google Cloud Build | CI/CDパイプライン | GitHub連携・自動テスト・プラットフォームへのデプロイ自動化 |
+| Vercel | Free（Edge Network） | Next.jsホスティング。GitHubと連携し自動プレビューデプロイ |
+| Google Cloud Build | CI/CDパイプライン | GitHub連携・自動テスト・Vercelへのデプロイ自動化 |
 
 ---
 
@@ -97,7 +97,7 @@
 | 5 | ユニットテスト | Vitest でコンポーネント・ロジックテスト | Cloud Build Step |
 | 6 | ビルド | Next.js プロダクションビルド | Cloud Build Step |
 | 7 | Dockerイメージ push | Artifact Registry にコンテナを保存 | Cloud Build / GCR |
-| 8 | デプロイ | main → 公開プラットフォーム本番 / develop → プレビュー環境（GitHub連携） | Cloud Build + プラットフォームAPI |
+| 8 | デプロイ | main → Vercel本番 / develop → Vercelプレビュー環境 | Vercel CLI / Cloud Build |
 | 9 | 通知 | デプロイ結果をSlack / GitHub PRにコメント | Cloud Build Notifier |
 
 ### 4-2. ブランチ戦略
@@ -126,14 +126,13 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '$_IMAGE', '.'] # Docker build
 
-  # デプロイ先は公開プラットフォームのGitHub連携に委譲
-  # mainブランチへのマージをトリガーにプラットフォーム側が自動デプロイ
-  # プラットフォーム確定後、以下にデプロイコマンドを追記する
-  # - name: 'プラットフォーム固有のビルダー'
-  #   args: ['deploy', ...]
+  - name: 'node:20'
+    entrypoint: 'npx'
+    args: ['vercel', '--prod', '--token', '$_VERCEL_TOKEN'] # Vercel本番デプロイ
 
 substitutions:
   _IMAGE: 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA'
+  _VERCEL_TOKEN: ''  # Secret Managerで管理
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -205,7 +204,7 @@ options:
 
 | 指標 | MVP目標値 | 計測方法 |
 |------|---------|---------|
-| ターン切り替えレイテンシ | < 500ms（P95） | Supabase Metrics / PostHog |
+| ターン切り替えレイテンシ | < 500ms（P95） | Vercel Analytics / Supabase Metrics |
 | セッション完結率 | > 60% | PostHog カスタムイベント |
 | ユニットテストカバレッジ | > 60% | Vitest + coverage-v8 |
 | Lighthouse スコア | > 85（モバイル） | Cloud Build Step で自動計測 |
@@ -219,14 +218,14 @@ options:
 | サービス | 月額概算 | 備考 |
 |---------|---------|------|
 | Supabase Free | ¥0 | DB 500MB / 月5万MAU / β期間は無料枠内 |
+| Vercel Free | ¥0 | 月100GBホスティング。20名βは無料枠内 |
 | Upstash Redis | ¥0〜500 | 月1万コマンド無料。β期間（20名）は無料枠内 |
 | Google Cloud Build | ¥500〜2,000 | 120分/日無料。超過分のみ従量 |
-| 公開プラットフォーム | プラットフォームの規約による | GitHub連携でホスティング。別途確認要 |
 | Claude API（任意・AI機能） | ¥0（Week5以降） | Week5以降に追加する場合のみ |
-| **合計（AI機能なし・プラットフォーム費用除く）** | **〜¥500〜2,500/月** | β期間（20名規模）の概算 |
+| **合計（AI機能なし）** | **〜¥500〜2,000/月** | β期間（20名規模）の概算 |
 
 > **コスト最適化方針**
-> Vercel・Cloud Run を廃止し、公開プラットフォームのホスティングに一本化したことでインフラコストを大幅削減。スケール時は Supabase Free → Pro（$25）への移行ラインを MAU 5万人超過を目安に設定する。
+> Vercel Free・Supabase Free を活用することでβ期間のインフラコストをほぼ¥0に抑える。スケール時は Supabase Free → Pro（$25）への移行ラインを MAU 5万人超過、Vercel Free → Pro（$20）を商用利用開始時を目安に設定する。
 
 ---
 
@@ -236,7 +235,6 @@ options:
 |--------|--------|------|
 | コールドスタート（ユーザー不足） | 高 | βはAIをダミープレイヤーとして充填。カクヨム・pixivコミュニティから手動招待 |
 | 荒らし・不適切投稿 | 高 | 投稿前のモデレーションAI導入（Claude API）。レピュテーションスコア制 |
-| プラットフォーム連携の制約 | 中 | プラットフォーム確定時点でWebSocket・外部API接続の可否を確認。制約があればSupabase Realtimeの代替手段を検討 |
 | WebSocket接続不安定 | 中 | 切断時のターン状態をRedisで保全。再接続時に自動復帰するロジックを実装 |
 | 著作権・共著権の帰属 | 中 | 利用規約でCC BY-SA相当ライセンスを採用。商用利用は全著者の同意を必須化 |
 | Claude Code依存によるコード品質低下 | 低 | 生成コードの必須レビュールール徹底。CIでLint・型チェック・テストを自動実行 |
@@ -271,7 +269,7 @@ options:
 | 3 | Google Cloud プロジェクト作成 / Cloud Build 接続 | フルスタックエンジニア | Week1 Day2 |
 | 4 | Supabase プロジェクト作成 / DBスキーマ実装 | フルスタックエンジニア | Week1 Day3–4 |
 | 5 | Cursor + Claude Code 環境セットアップ（全メンバー） | 全員 | Week1 Day1 |
-| 6 | 公開プラットフォームの確定 / GitHub連携設定・WebSocket可否確認 | プロジェクトオーナー | Week1 末 |
+| 6 | Vercel アカウント作成 / GitHub リポジトリ連携設定 | フルスタックエンジニア | Week1 Day2 |
 | 7 | UIデザインワイヤーフレーム作成（5画面） | デザイナー | Week1 末 |
 | 8 | クローズドβ招待リスト作成（20名） | 全員 | Week6 末 |
 
