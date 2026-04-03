@@ -272,6 +272,41 @@ options:
 
 ---
 
+## 13. 実装進捗（2026-04-03時点）
+
+### 完了済み
+
+| フェーズ | 内容 |
+|---------|------|
+| Ph.1 | Next.js 14 + Supabase 初期化、Google認証・メール認証、ルーム作成・招待リンク |
+| Ph.2 | Supabase Realtimeによるターン制執筆、60秒タイマー・タイムアウトスキップ、小説ビューア |
+| Ph.3 | 完結フロー（ホストが完結ボタン）、貢献率グラフ（recharts PieChart）、公開ライブラリ、いいね機能 |
+| CI/CD | Google Cloud Build → Artifact Registry → Cloud Run 自動デプロイ |
+| インフラ | Cloud Run（`--min-instances=0` でランニングコスト¥0）、Secret Manager |
+
+**本番URL**: https://collaborative-novel-f3hfydm6ta-an.a.run.app
+
+### 既知の課題・TODO
+
+| 優先度 | 課題 | 対応方針 |
+|--------|------|---------|
+| 高 | Vitestによるユニットテスト未実装（CI上コメントアウト） | Ph.4で導入 |
+| 中 | room_members RLSポリシーが自己参照で不安定 → `read authenticated` に変更済み（要SQL実行） | Supabase SQL Editorで適用 |
+| 中 | Google OAuth初回ログイン時にpublic.usersレコードが未作成だった → callbackで自動作成に修正済み | デプロイ済み |
+| 中 | Lighthouse / パフォーマンス計測未実施 | Ph.4で実施 |
+| 低 | Framer Motionによるターン切り替えアニメーション未実装 | v2対応 |
+| 低 | AI整合チェック・AI代行投稿 | v2対応 |
+
+### 技術的決定事項（計画からの変更点）
+
+| 項目 | 計画 | 実際 |
+|------|------|------|
+| ホスティング | 未定 | Google Cloud Run（min-instances=0） |
+| Redis（ターン管理） | Upstash Redis | 不使用（Supabase sessionsテーブルで代替） |
+| タイマー管理 | Redis | DBのtimer_endカラム + クライアントサイドカウントダウン |
+
+---
+
 ## 承認欄
 
 | 項目 | 内容 |
