@@ -29,19 +29,31 @@ export default async function LibraryPage() {
       likeCounts[like.novel_id] = (likeCounts[like.novel_id] ?? 0) + 1
     }
 
-    // セッション経由で文章数を集計
+    // 各ルームの最新セッションのみ取得して文章数を集計
     const { data: sessions } = await supabase
       .from('sessions')
-      .select('id, room_id')
+      .select('id, room_id, created_at')
       .in('room_id', (novels ?? []).map((n) => n.room_id))
+      .order('created_at', { ascending: false })
 
-    if (sessions && sessions.length > 0) {
+    // ルームごとに最新セッションIDのみ保持
+    const latestSessionMap = new Map<string, string>()
+    for (const s of sessions ?? []) {
+      if (!latestSessionMap.has(s.room_id)) {
+        latestSessionMap.set(s.room_id, s.id)
+      }
+    }
+    const latestSessionIds = Array.from(latestSessionMap.values())
+
+    if (latestSessionIds.length > 0) {
       const { data: counts } = await supabase
         .from('sentences')
         .select('session_id')
-        .in('session_id', sessions.map((s) => s.id))
+        .in('session_id', latestSessionIds)
 
-      const sessionToRoom = new Map(sessions.map((s) => [s.id, s.room_id]))
+      // sessionId → roomId の逆引きマップ
+      const sessionToRoom = new Map<string, string>()
+      latestSessionMap.forEach((sessionId, roomId) => sessionToRoom.set(sessionId, roomId))
       const roomToNovel = new Map((novels ?? []).map((n) => [n.room_id, n.id]))
 
       for (const row of counts ?? []) {

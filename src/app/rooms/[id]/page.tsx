@@ -149,13 +149,28 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     )
   }
 
-  // 完結済み（Ph.3で実装予定）
-  return (
-    <>
-      <Header />
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-600">この小説は完結しています。</p>
-      </main>
-    </>
-  )
+  // 完結済み → 小説詳細ページへリダイレクト
+  if (room.status === 'completed') {
+    const { data: novel } = await supabase
+      .from('novels')
+      .select('id')
+      .eq('room_id', params.id)
+      .eq('status', 'completed')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (novel) redirect(`/novels/${novel.id}`)
+
+    return (
+      <>
+        <Header />
+        <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <p className="text-gray-600">この小説は完結しています。</p>
+        </main>
+      </>
+    )
+  }
+
+  return null
 }
