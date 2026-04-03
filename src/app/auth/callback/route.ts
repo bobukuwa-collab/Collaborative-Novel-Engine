@@ -30,9 +30,11 @@ export async function GET(request: Request) {
         })
       }
 
-      return NextResponse.redirect(`${origin}/`)
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? origin
+      return NextResponse.redirect(`${siteUrl}/`)
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? origin
+  return NextResponse.redirect(`${siteUrl}/login?error=auth_callback_failed`)
 }
