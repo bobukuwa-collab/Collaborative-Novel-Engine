@@ -26,6 +26,11 @@ steps:
       - 'NEXT_PUBLIC_SUPABASE_ANON_KEY'
       - 'NEXT_PUBLIC_SITE_URL'
 
+  - id: docker-auth
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args: ['auth', 'configure-docker', 'asia-northeast1-docker.pkg.dev']
+
   - id: docker-build
     name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '$_IMAGE', '.']
