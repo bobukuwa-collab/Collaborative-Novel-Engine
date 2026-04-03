@@ -1,6 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { startSession } from '@/lib/sessions/actions'
 
 type Member = {
   user_id: string
@@ -25,7 +28,14 @@ type Props = {
 }
 
 export function WaitingRoom({ room, currentUserId, inviteUrl }: Props) {
+  const router = useRouter()
   const [copied, setCopied] = useState(false)
+
+  const isHost = room.room_members.some(
+    (m) => m.user_id === currentUserId && m.join_order === 0,
+  )
+  const sortedMembers = [...room.room_members].sort((a, b) => a.join_order - b.join_order)
+  const canStart = isHost && room.room_members.length >= 2
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(inviteUrl)
@@ -33,7 +43,38 @@ export function WaitingRoom({ room, currentUserId, inviteUrl }: Props) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const sortedMembers = [...room.room_members].sort((a, b) => a.join_order - b.join_order)
+  // Realtime: detect new members joining and session start
+  useEffect(() => {
+    const supabase = createClient()
+
+    const channel = supabase
+      .channel(`waiting-${room.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'room_members',
+          filter: `room_id=eq.${room.id}`,
+        },
+        () => router.refresh(),
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'sessions',
+          filter: `room_id=eq.${room.id}`,
+        },
+        () => router.refresh(),
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [room.id, router])
+
+  const startSessionForRoom = startSession.bind(null, room.id)
 
   return (
     <main className="min-h-screen bg-gray-50 py-12 px-4">
@@ -109,14 +150,19 @@ export function WaitingRoom({ room, currentUserId, inviteUrl }: Props) {
             ))}
           </ul>
 
-          {room.room_members.length >= 2 && (
+          <form action={startSessionForRoom} className="mt-4">
             <button
-              className="mt-4 w-full py-2 px-4 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 transition-colors"
-              disabled
+              type="submit"
+              disabled={!canStart}
+              className="w-full py-2 px-4 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
             >
-              執筆を開始（実装中）
+              {!isHost
+                ? 'ホストが開始するまでお待ちください'
+                : room.room_members.length < 2
+                  ? 'あと1人以上参加が必要です'
+                  : '執筆を開始'}
             </button>
-          )}
+          </form>
         </div>
 
       </div>

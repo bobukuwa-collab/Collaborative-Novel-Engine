@@ -39,7 +39,8 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
     .single()
 
   if (roomError || !room) {
-    return { error: 'ルームの作成に失敗しました' }
+    console.error('[createRoom] room insert error:', roomError)
+    return { error: `ルームの作成に失敗しました: ${roomError?.message}` }
   }
 
   const { error: memberError } = await supabase
@@ -52,7 +53,8 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
     })
 
   if (memberError) {
-    return { error: 'ルームへの参加に失敗しました' }
+    console.error('[createRoom] member insert error:', memberError)
+    return { error: `ルームへの参加に失敗しました: ${memberError?.message}` }
   }
 
   redirect(`/rooms/${room.id}`)

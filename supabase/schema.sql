@@ -151,6 +151,24 @@ create policy "likes: insert self" on public.likes
 create policy "likes: delete self" on public.likes
   for delete using (auth.uid() = user_id);
 
+-- sessions: ルームメンバーはセッションを作成・更新可能（Ph.2追加）
+create policy "sessions: insert room members" on public.sessions
+  for insert with check (
+    exists (
+      select 1 from public.room_members rm
+      where rm.room_id = sessions.room_id
+        and rm.user_id = auth.uid()
+    )
+  );
+create policy "sessions: update room members" on public.sessions
+  for update using (
+    exists (
+      select 1 from public.room_members rm
+      where rm.room_id = sessions.room_id
+        and rm.user_id = auth.uid()
+    )
+  );
+
 -- ============================================================
 -- Realtime有効化（ターン管理に必要）
 -- ============================================================
