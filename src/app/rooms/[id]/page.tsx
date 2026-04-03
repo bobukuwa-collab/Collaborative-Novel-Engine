@@ -40,9 +40,12 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
   if (membersError) console.error('[RoomPage] members error:', membersError)
 
   const roomMembers = members ?? []
-  const isMember = roomMembers.some((m: { user_id: string }) => m.user_id === user.id)
+  // RLSの問題でmembersが空の場合も created_by で作成者を判定してループ回避
+  const isMember =
+    roomMembers.some((m: { user_id: string }) => m.user_id === user.id) ||
+    room.created_by === user.id
 
-  // メンバー名を別クエリで取得（RLS問題を回避）
+  // メンバー名を別クエリで取得
   const userIds = roomMembers.map((m: { user_id: string }) => m.user_id)
   const { data: userProfiles } = userIds.length > 0
     ? await supabase.from('users').select('id, display_name').in('id', userIds)
@@ -73,14 +76,15 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       )
     }
 
-    await supabase.from('room_members').insert({
+    const { error: joinError } = await supabase.from('room_members').insert({
       room_id: room.id,
       user_id: user.id,
       join_order: roomMembers.length,
       color: MEMBER_COLORS[roomMembers.length % MEMBER_COLORS.length],
     })
 
-    redirect(`/rooms/${params.id}`)
+    // 挿入成功時のみリダイレクト（失敗=既に参加済みならそのまま続行）
+    if (!joinError) redirect(`/rooms/${params.id}`)
   }
 
   const inviteUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001'}/rooms/${params.id}`
