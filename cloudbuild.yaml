@@ -33,11 +33,11 @@ steps:
 
   - id: docker-build
     name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '$_IMAGE', '.']
+    args: ['build', '-t', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA', '.']
 
   - id: docker-push
     name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '$_IMAGE']
+    args: ['push', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA']
 
   - id: deploy
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -46,7 +46,7 @@ steps:
       - 'run'
       - 'deploy'
       - '$_SERVICE_NAME'
-      - '--image=$_IMAGE'
+      - '--image=asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA'
       - '--region=$_REGION'
       - '--platform=managed'
       - '--allow-unauthenticated'
@@ -67,7 +67,6 @@ availableSecrets:
 substitutions:
   _REGION: 'asia-northeast1'
   _SERVICE_NAME: 'collaborative-novel'
-  _IMAGE: 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
