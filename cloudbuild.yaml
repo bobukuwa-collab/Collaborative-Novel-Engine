@@ -32,7 +32,17 @@ steps:
 
   - id: docker-build
     name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA', '.']
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_URL=https://aiawwfgtjuuxzgcqvujn.supabase.co'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpYXd3Zmd0anV1eHpnY3F2dWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5NjI3MDYsImV4cCI6MjA5MDUzODcwNn0.bOSWPOcwSKi7Lb3Mnatr9rLyGNBt8UEUwUaXaY3aKdY'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SITE_URL=https://collaborative-novel-f3hfydm6ta-an.a.run.app'
+      - '.'
 
   - id: docker-push
     name: 'gcr.io/cloud-builders/docker'
