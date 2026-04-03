@@ -34,13 +34,20 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
 
   const { data: members, error: membersError } = await supabase
     .from('room_members')
-    .select('user_id, join_order, color, users(display_name)')
+    .select('user_id, join_order, color')
     .eq('room_id', params.id)
 
   if (membersError) console.error('[RoomPage] members error:', membersError)
 
   const roomMembers = members ?? []
   const isMember = roomMembers.some((m: { user_id: string }) => m.user_id === user.id)
+
+  // メンバー名を別クエリで取得（RLS問題を回避）
+  const userIds = roomMembers.map((m: { user_id: string }) => m.user_id)
+  const { data: userProfiles } = userIds.length > 0
+    ? await supabase.from('users').select('id, display_name').in('id', userIds)
+    : { data: [] }
+  const profileMap = new Map((userProfiles ?? []).map((u: { id: string; display_name: string }) => [u.id, u]))
 
   // 未参加かつ待機中なら参加処理
   if (!isMember) {
@@ -78,9 +85,19 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
 
   const inviteUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001'}/rooms/${params.id}`
 
+  // メンバーにプロファイルを付与
+  const membersWithProfile = roomMembers
+    .map((m: { user_id: string; join_order: number; color: string }) => ({
+      ...m,
+      users: profileMap.get(m.user_id)
+        ? { display_name: profileMap.get(m.user_id)!.display_name }
+        : null,
+    }))
+    .sort((a: { join_order: number }, b: { join_order: number }) => a.join_order - b.join_order)
+
   // 待機中
   if (room.status === 'waiting') {
-    const roomWithMembers = { ...room, room_members: roomMembers }
+    const roomWithMembers = { ...room, room_members: membersWithProfile }
     return (
       <>
         <Header />
@@ -117,21 +134,8 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       .eq('session_id', session.id)
       .order('seq', { ascending: true })
 
-    // Supabaseのリレーション結果（users）を正規化
-    const normalizedMembers = (roomMembers as Array<{
-      user_id: string
-      join_order: number
-      color: string
-      users: { display_name: string }[] | { display_name: string } | null
-    }>)
-      .map((m) => ({
-        ...m,
-        users: Array.isArray(m.users) ? (m.users[0] ?? null) : m.users,
-      }))
-      .sort((a, b) => a.join_order - b.join_order)
-
-    const isHost = normalizedMembers.some(
-      (m) => m.user_id === user.id && m.join_order === 0,
+    const isHost = membersWithProfile.some(
+      (m: { user_id: string; join_order: number }) => m.user_id === user.id && m.join_order === 0,
     )
 
     return (
@@ -140,7 +144,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
         <WritingRoom
           room={{ id: room.id, genre: room.genre, char_limit: room.char_limit }}
           session={session}
-          members={normalizedMembers}
+          members={membersWithProfile}
           initialSentences={sentences ?? []}
           currentUserId={user.id}
           isHost={isHost}
