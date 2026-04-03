@@ -110,7 +110,7 @@ export async function skipTurn(sessionId: string, currentTurn: number) {
   return { success: true }
 }
 
-export async function endSession(roomId: string, sessionId: string) {
+export async function endSession(roomId: string, _sessionId: string) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '認証が必要です' }
