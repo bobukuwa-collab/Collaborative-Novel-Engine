@@ -109,3 +109,48 @@ export async function skipTurn(sessionId: string, currentTurn: number) {
 
   return { success: true }
 }
+
+export async function endSession(roomId: string, sessionId: string) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '認証が必要です' }
+
+  // ホストのみ完結可能
+  const { data: member } = await supabase
+    .from('room_members')
+    .select('join_order')
+    .eq('room_id', roomId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!member || member.join_order !== 0) {
+    return { error: 'ホストのみ完結できます' }
+  }
+
+  // novelsテーブルにレコードを作成
+  const { data: novel, error: novelError } = await supabase
+    .from('novels')
+    .insert({
+      room_id: roomId,
+      status: 'completed',
+      published_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single()
+
+  if (novelError || !novel) {
+    return { error: `小説の保存に失敗しました: ${novelError?.message}` }
+  }
+
+  // ルームのステータスを完結に更新
+  const { error: roomError } = await supabase
+    .from('rooms')
+    .update({ status: 'completed' })
+    .eq('id', roomId)
+
+  if (roomError) {
+    return { error: `ルームの更新に失敗しました: ${roomError?.message}` }
+  }
+
+  redirect(`/novels/${novel.id}`)
+}

@@ -15,6 +15,9 @@ export async function Header() {
     <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
       <a href="/" className="text-lg font-bold text-indigo-600">協調小説エンジン</a>
       <div className="flex items-center gap-4">
+        <a href="/library" className="text-sm text-gray-600 hover:text-indigo-600 transition-colors">
+          ライブラリ
+        </a>
         <span className="text-sm text-gray-600">{displayName}</span>
         <form action={signOut}>
           <button

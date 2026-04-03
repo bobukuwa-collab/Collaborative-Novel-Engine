@@ -143,6 +143,26 @@ create policy "novels: read published" on public.novels
       and rm.user_id = auth.uid()
   ));
 
+-- novels: ルームメンバーは小説を作成可能（完結フロー）
+create policy "novels: insert room members" on public.novels
+  for insert with check (
+    exists (
+      select 1 from public.room_members rm
+      where rm.room_id = novels.room_id
+        and rm.user_id = auth.uid()
+    )
+  );
+
+-- novels: ルームメンバーは小説を更新可能
+create policy "novels: update room members" on public.novels
+  for update using (
+    exists (
+      select 1 from public.room_members rm
+      where rm.room_id = novels.room_id
+        and rm.user_id = auth.uid()
+    )
+  );
+
 -- likes: 認証済みユーザーは閲覧・いいね可能
 create policy "likes: read all" on public.likes
   for select using (auth.role() = 'authenticated');

@@ -130,6 +130,10 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       }))
       .sort((a, b) => a.join_order - b.join_order)
 
+    const isHost = normalizedMembers.some(
+      (m) => m.user_id === user.id && m.join_order === 0,
+    )
+
     return (
       <>
         <Header />
@@ -139,6 +143,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
           members={normalizedMembers}
           initialSentences={sentences ?? []}
           currentUserId={user.id}
+          isHost={isHost}
         />
       </>
     )

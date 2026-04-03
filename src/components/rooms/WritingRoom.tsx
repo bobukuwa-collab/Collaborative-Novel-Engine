@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useTransition } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { submitSentence, skipTurn } from '@/lib/sessions/actions'
+import { submitSentence, skipTurn, endSession } from '@/lib/sessions/actions'
 
 type Session = {
   id: string
@@ -39,6 +39,7 @@ type Props = {
   members: Member[]
   initialSentences: Sentence[]
   currentUserId: string
+  isHost: boolean
 }
 
 export function WritingRoom({
@@ -47,13 +48,16 @@ export function WritingRoom({
   members,
   initialSentences,
   currentUserId,
+  isHost,
 }: Props) {
   const [session, setSession] = useState(initialSession)
   const [sentences, setSentences] = useState(initialSentences)
   const [content, setContent] = useState('')
   const [timeLeft, setTimeLeft] = useState(60)
   const [error, setError] = useState<string | null>(null)
+  const [endError, setEndError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [isEnding, startEndTransition] = useTransition()
   const skipCalledRef = useRef(false)
 
   const sortedMembers = [...members].sort((a, b) => a.join_order - b.join_order)
@@ -122,6 +126,15 @@ export function WritingRoom({
     return () => { supabase.removeChannel(channel) }
   }, [room.id, initialSession.id])
 
+  const handleEnd = () => {
+    if (!window.confirm('本当に小説を完結しますか？この操作は取り消せません。')) return
+    setEndError(null)
+    startEndTransition(async () => {
+      const result = await endSession(room.id, session.id)
+      if (result?.error) setEndError(result.error)
+    })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!content.trim() || !isMyTurn || isPending) return
@@ -158,6 +171,19 @@ export function WritingRoom({
           isMyTurn={isMyTurn}
           turnNumber={session.current_turn + 1}
         />
+
+        {isHost && (
+          <div className="flex justify-end">
+            <button
+              onClick={handleEnd}
+              disabled={isEnding || sentences.length === 0}
+              className="px-4 py-1.5 text-xs font-medium text-white bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors"
+            >
+              {isEnding ? '完結処理中...' : '小説を完結する'}
+            </button>
+          </div>
+        )}
+        {endError && <p className="text-xs text-red-500 text-right">{endError}</p>}
 
         <NovelViewer sentences={sentences} members={sortedMembers} />
 
