@@ -30,7 +30,25 @@ steps:
     name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '$_IMAGE', '.']
 
-  # デプロイステップはホスティング先確定後に追記
+  - id: docker-push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_IMAGE']
+
+  - id: deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'
+      - '--image=$_IMAGE'
+      - '--region=$_REGION'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=3000'
+      - '--memory=512Mi'
+      - '--min-instances=0'
+      - '--set-secrets=NEXT_PUBLIC_SUPABASE_URL=NEXT_PUBLIC_SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_ANON_KEY=NEXT_PUBLIC_SUPABASE_ANON_KEY:latest,NEXT_PUBLIC_SITE_URL=NEXT_PUBLIC_SITE_URL:latest'
 
 availableSecrets:
   secretManager:
@@ -42,7 +60,9 @@ availableSecrets:
       env: 'NEXT_PUBLIC_SITE_URL'
 
 substitutions:
-  _IMAGE: 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA'
+  _REGION: 'asia-northeast1'
+  _SERVICE_NAME: 'collaborative-novel'
+  _IMAGE: '$_REGION-docker.pkg.dev/$PROJECT_ID/novel/api:$SHORT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY
