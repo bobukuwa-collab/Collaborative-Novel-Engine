@@ -13,7 +13,7 @@ export default async function LibraryPage() {
     .eq('status', 'completed')
     .order('published_at', { ascending: false })
 
-  // 各小説のいいね数・文章数を取得
+  // 各作品のいいね数・フレーズ数を取得
   const novelIds = (novels ?? []).map((n) => n.id)
 
   const likeCounts: Record<string, number> = {}

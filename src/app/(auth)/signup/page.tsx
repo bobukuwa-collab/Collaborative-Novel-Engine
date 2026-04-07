@@ -8,7 +8,7 @@ export default function SignupPage() {
           新規登録
         </h1>
         <p className="text-sm text-center text-gray-500 mb-6">
-          ペンネームを決めて執筆を始めましょう
+          ペンネームを決めて言葉を紡ぎましょう
         </p>
         <SignupForm />
       </div>

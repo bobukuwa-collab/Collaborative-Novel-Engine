@@ -20,7 +20,7 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
       <>
         <Header />
         <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <p className="text-gray-600">小説が見つかりません。</p>
+          <p className="text-gray-600">作品が見つかりません。</p>
         </main>
       </>
     )

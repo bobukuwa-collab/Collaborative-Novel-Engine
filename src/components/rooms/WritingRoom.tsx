@@ -221,7 +221,7 @@ export function WritingRoom({
           </div>
         </div>
 
-        {/* 小説本文 */}
+        {/* 言葉（フレーズ一覧） */}
         <NovelViewer sentences={sentences} members={sortedMembers} />
 
         {/* 入力欄 */}

@@ -144,7 +144,7 @@ async function completeNovel(roomId: string) {
     .single()
 
   if (novelError || !novel) {
-    return { error: `小説の保存に失敗しました: ${novelError?.message}` }
+    return { error: `作品の保存に失敗しました: ${novelError?.message}` }
   }
 
   await supabase

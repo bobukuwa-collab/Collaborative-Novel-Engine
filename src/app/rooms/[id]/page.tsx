@@ -153,7 +153,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     )
   }
 
-  // 完結済み → 小説詳細ページへリダイレクト
+  // 完成済み → 作品詳細ページへリダイレクト
   if (room.status === 'completed') {
     const { data: novel } = await supabase
       .from('novels')
@@ -170,7 +170,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       <>
         <Header />
         <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <p className="text-gray-600">この小説は完結しています。</p>
+          <p className="text-gray-600">この作品はすでに完成しています。</p>
         </main>
       </>
     )

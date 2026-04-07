@@ -272,30 +272,40 @@ options:
 
 ---
 
-## 13. 実装進捗（2026-04-03時点）
+## 13. 実装進捗（2026-04-07時点）
 
 ### 完了済み
 
 | フェーズ | 内容 |
 |---------|------|
 | Ph.1 | Next.js 14 + Supabase 初期化、Google認証・メール認証、ルーム作成・招待リンク |
-| Ph.2 | Supabase Realtimeによるターン制執筆、60秒タイマー・タイムアウトスキップ、小説ビューア |
-| Ph.3 | 完結フロー（ホストが完結ボタン）、貢献率グラフ（recharts PieChart）、公開ライブラリ、いいね機能 |
-| CI/CD | Google Cloud Build → Artifact Registry → Cloud Run 自動デプロイ |
+| Ph.2 | Supabase Realtimeによるターン制執筆、タイマー・タイムアウト自動送信、フレーズビューア |
+| Ph.3 | 完成フロー（投票制・過半数で自動完成）、貢献率グラフ（recharts PieChart）、コレクション、いいね |
+| Ph.4 | Vitestユニットテスト28件・CIに組込、Lighthouse CI、RLS修正、6文字ルームコード参加機能 |
+| CI/CD | Google Cloud Build → Artifact Registry → Cloud Run 自動デプロイ + Lighthouse計測 |
 | インフラ | Cloud Run（`--min-instances=0` でランニングコスト¥0）、Secret Manager |
+| コンセプト | 「協調小説」→「**言葉のバトン**」にピボット。短句・名言・ポエム向けに刷新 |
 
 **本番URL**: https://collaborative-novel-f3hfydm6ta-an.a.run.app
+
+### 主要機能（現在の実装）
+
+| 機能 | 詳細 |
+|------|------|
+| ルームコード参加 | 6文字コードで別アカウントから簡単参加（/join ページ） |
+| タイマー設定 | ルーム作成時に30/60/90秒を選択可能 |
+| タイムアウト自動送信 | 時間切れ時、入力中のテキストを自動送信（空なら自動スキップ） |
+| 投票制完成 | 全員に投票ボタン。2人→全員・3人以上→過半数で自動完成 |
+| 書籍デザイン | 完成作品はアンバー系・セリフ体の書籍風デザインで表示 |
+| カテゴリ10種 | 愛と恋・自然と季節・哲学と人生・夢と希望・ユーモア・孤独と静寂・友情と仲間・宇宙と神秘・食と日常・ランダム |
 
 ### 既知の課題・TODO
 
 | 優先度 | 課題 | 対応方針 |
 |--------|------|---------|
-| 高 | Vitestによるユニットテスト未実装（CI上コメントアウト） | Ph.4で導入 |
-| 中 | room_members RLSポリシーが自己参照で不安定 → `read authenticated` に変更済み（要SQL実行） | Supabase SQL Editorで適用 |
-| 中 | Google OAuth初回ログイン時にpublic.usersレコードが未作成だった → callbackで自動作成に修正済み | デプロイ済み |
-| 中 | Lighthouse / パフォーマンス計測未実施 | Ph.4で実施 |
 | 低 | Framer Motionによるターン切り替えアニメーション未実装 | v2対応 |
 | 低 | AI整合チェック・AI代行投稿 | v2対応 |
+| 低 | Lighthouse スコア計測結果の確認・チューニング | 次回CI確認 |
 
 ### 技術的決定事項（計画からの変更点）
 
@@ -304,6 +314,8 @@ options:
 | ホスティング | 未定 | Google Cloud Run（min-instances=0） |
 | Redis（ターン管理） | Upstash Redis | 不使用（Supabase sessionsテーブルで代替） |
 | タイマー管理 | Redis | DBのtimer_endカラム + クライアントサイドカウントダウン |
+| 完結方式 | ホストのみ | 投票制（過半数・全員一致） |
+| コンセプト | 協調小説 | 言葉のバトン（短句・名言・ポエム） |
 
 ---
 
