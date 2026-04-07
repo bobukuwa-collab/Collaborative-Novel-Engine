@@ -66,6 +66,8 @@ export function WritingRoom({
   const [isPending, startTransition] = useTransition()
   const [isVoting, startVoteTransition] = useTransition()
   const skipCalledRef = useRef(false)
+  const contentRef = useRef(content)
+  useEffect(() => { contentRef.current = content }, [content])
 
   const sortedMembers = [...members].sort((a, b) => a.join_order - b.join_order)
   const memberCount = sortedMembers.length
@@ -95,11 +97,22 @@ export function WritingRoom({
   useEffect(() => {
     if (timeLeft === 0 && isMyTurn && !skipCalledRef.current) {
       skipCalledRef.current = true
+      const currentContent = contentRef.current.trim().slice(0, room.char_limit)
       startTransition(async () => {
-        await skipTurn(session.id, session.current_turn, room.timer_seconds)
+        if (currentContent) {
+          // 入力中のテキストがあれば強制送信
+          const result = await submitSentence(
+            session.id, currentContent, session.current_turn,
+            room.char_limit, room.timer_seconds,
+          )
+          if (!result?.error) setContent('')
+        } else {
+          // 何も入力していなければスキップ
+          await skipTurn(session.id, session.current_turn, room.timer_seconds)
+        }
       })
     }
-  }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds])
+  }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds, room.char_limit])
 
   useEffect(() => {
     const supabase = createClient()
