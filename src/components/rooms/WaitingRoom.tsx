@@ -18,6 +18,7 @@ type Room = {
   max_players: number
   char_limit: number
   status: string
+  join_code: string
   room_members: Member[]
 }
 
@@ -106,22 +107,38 @@ export function WaitingRoom({ room, currentUserId, inviteUrl }: Props) {
           </div>
         </div>
 
-        {/* 招待リンク */}
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">友達を招待する</h2>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              readOnly
-              value={inviteUrl}
-              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md bg-gray-50 text-gray-600 truncate"
-            />
-            <button
-              onClick={handleCopy}
-              className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors whitespace-nowrap"
-            >
-              {copied ? 'コピー済み ✓' : 'コピー'}
-            </button>
+        {/* 招待 */}
+        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+          <h2 className="text-sm font-semibold text-gray-700">友達を招待する</h2>
+
+          {/* ルームコード（メイン） */}
+          <div className="text-center bg-indigo-50 rounded-lg py-4">
+            <p className="text-xs text-indigo-500 mb-1">ルームコード</p>
+            <p className="text-4xl font-mono font-bold tracking-widest text-indigo-700">
+              {room.join_code}
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              参加者は「コードで参加」からこのコードを入力
+            </p>
+          </div>
+
+          {/* URLコピー（サブ） */}
+          <div>
+            <p className="text-xs text-gray-500 mb-2">または招待リンクをコピー</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                readOnly
+                value={inviteUrl}
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md bg-gray-50 text-gray-600 truncate"
+              />
+              <button
+                onClick={handleCopy}
+                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors whitespace-nowrap"
+              >
+                {copied ? 'コピー済み ✓' : 'コピー'}
+              </button>
+            </div>
           </div>
         </div>
 

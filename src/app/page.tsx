@@ -25,15 +25,18 @@ export default async function HomePage() {
               ルームを作成
             </Link>
             <Link
-              href="/library"
+              href="/join"
               className="py-3 px-8 bg-white text-indigo-600 font-semibold rounded-lg border border-indigo-200 hover:bg-indigo-50 transition-colors"
             >
-              ライブラリを見る
+              コードで参加
+            </Link>
+            <Link
+              href="/library"
+              className="py-3 px-8 bg-white text-gray-600 font-semibold rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+            >
+              ライブラリ
             </Link>
           </div>
-          <p className="text-sm text-gray-400">
-            友達から招待リンクを受け取った場合はそのURLを開いてください
-          </p>
         </div>
       </main>
     </>

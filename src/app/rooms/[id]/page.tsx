@@ -101,7 +101,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
 
   // 待機中
   if (room.status === 'waiting') {
-    const roomWithMembers = { ...room, room_members: membersWithProfile }
+    const roomWithMembers = { ...room, room_members: membersWithProfile, join_code: room.join_code ?? '' }
     return (
       <>
         <Header />
