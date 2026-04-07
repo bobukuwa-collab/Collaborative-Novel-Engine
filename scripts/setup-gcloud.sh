@@ -4,9 +4,9 @@ set -euo pipefail
 # ============================================================
 # 事前に以下を編集してから実行してください
 # ============================================================
-PROJECT_ID="YOUR_PROJECT_ID"          # Google Cloud プロジェクトID
-SUPABASE_URL="https://xxxx.supabase.co"
-SUPABASE_ANON_KEY="eyJhbGci..."
+PROJECT_ID="collaborative-novel-engine"          # Google Cloud プロジェクトID
+SUPABASE_URL="https://aiawwfgtjuuxzgcqvujn.supabase.co"
+SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpYXd3Zmd0anV1eHpnY3F2dWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5NjI3MDYsImV4cCI6MjA5MDUzODcwNn0.bOSWPOcwSKi7Lb3Mnatr9rLyGNBt8UEUwUaXaY3aKdY"
 REGION="asia-northeast1"
 SERVICE_NAME="collaborative-novel"
 # ============================================================

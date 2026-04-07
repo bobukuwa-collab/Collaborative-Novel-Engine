@@ -4,10 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
-const TURN_DURATION_SECONDS = 60
-
-function nextTimerEnd(): string {
-  return new Date(Date.now() + TURN_DURATION_SECONDS * 1000).toISOString()
+function nextTimerEnd(durationSeconds: number): string {
+  return new Date(Date.now() + durationSeconds * 1000).toISOString()
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -35,9 +33,18 @@ export async function startSession(roomId: string, _formData: FormData): Promise
 
   if (existingSession) return
 
+  // ルームのタイマー設定を取得
+  const { data: room } = await supabase
+    .from('rooms')
+    .select('timer_seconds')
+    .eq('id', roomId)
+    .single()
+
+  const timerSeconds = room?.timer_seconds ?? 60
+
   const { error: sessionError } = await supabase
     .from('sessions')
-    .insert({ room_id: roomId, current_turn: 0, timer_end: nextTimerEnd() })
+    .insert({ room_id: roomId, current_turn: 0, timer_end: nextTimerEnd(timerSeconds) })
 
   if (sessionError) return
 
@@ -58,6 +65,7 @@ export async function submitSentence(
   content: string,
   currentTurn: number,
   charLimit: number,
+  timerSeconds: number,
 ) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -87,7 +95,7 @@ export async function submitSentence(
 
   const { error: sessionError } = await supabase
     .from('sessions')
-    .update({ current_turn: currentTurn + 1, timer_end: nextTimerEnd() })
+    .update({ current_turn: currentTurn + 1, timer_end: nextTimerEnd(timerSeconds) })
     .eq('id', sessionId)
     .eq('current_turn', currentTurn)
 
@@ -98,43 +106,37 @@ export async function submitSentence(
   return { success: true }
 }
 
-export async function skipTurn(sessionId: string, currentTurn: number) {
+export async function skipTurn(sessionId: string, currentTurn: number, timerSeconds: number) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '認証が必要です' }
 
   await supabase
     .from('sessions')
-    .update({ current_turn: currentTurn + 1, timer_end: nextTimerEnd() })
+    .update({ current_turn: currentTurn + 1, timer_end: nextTimerEnd(timerSeconds) })
     .eq('id', sessionId)
     .eq('current_turn', currentTurn)
 
   return { success: true }
 }
 
-export async function endSession(roomId: string, _sessionId: string, title?: string) {
+// 完結処理の共通ロジック（voteToEndから呼ぶ）
+async function completeNovel(roomId: string) {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: '認証が必要です' }
 
-  // ホストのみ完結可能
-  const { data: member } = await supabase
-    .from('room_members')
-    .select('join_order')
-    .eq('room_id', roomId)
-    .eq('user_id', user.id)
+  const { data: room } = await supabase
+    .from('rooms')
+    .select('genre')
+    .eq('id', roomId)
     .single()
 
-  if (!member || member.join_order !== 0) {
-    return { error: 'ホストのみ完結できます' }
-  }
+  const title = room ? `${room.genre}の共著小説` : '無題の共著小説'
 
-  // novelsテーブルにレコードを作成（Realtimeで他ユーザーへ通知される）
   const { data: novel, error: novelError } = await supabase
     .from('novels')
     .insert({
       room_id: roomId,
-      title: title?.trim() || '無題の共著小説',
+      title,
       status: 'completed',
       published_at: new Date().toISOString(),
     })
@@ -145,15 +147,58 @@ export async function endSession(roomId: string, _sessionId: string, title?: str
     return { error: `小説の保存に失敗しました: ${novelError?.message}` }
   }
 
-  // ルームのステータスを完結に更新
-  const { error: roomError } = await supabase
+  await supabase
     .from('rooms')
     .update({ status: 'completed' })
     .eq('id', roomId)
 
-  if (roomError) {
-    return { error: `ルームの更新に失敗しました: ${roomError?.message}` }
+  return { novelId: novel.id }
+}
+
+export async function voteToEnd(roomId: string) {
+  const supabase = createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: '認証が必要です' }
+
+  // 既に投票済みか確認
+  const { data: existing } = await supabase
+    .from('completion_votes')
+    .select('user_id')
+    .eq('room_id', roomId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (existing) return { error: 'すでに投票済みです' }
+
+  // 投票を追加
+  const { error: voteError } = await supabase
+    .from('completion_votes')
+    .insert({ room_id: roomId, user_id: user.id })
+
+  if (voteError) return { error: `投票に失敗しました: ${voteError.message}` }
+
+  // 投票数と参加人数を取得
+  const [{ count: voteCount }, { count: memberCount }] = await Promise.all([
+    supabase
+      .from('completion_votes')
+      .select('*', { count: 'exact', head: true })
+      .eq('room_id', roomId),
+    supabase
+      .from('room_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('room_id', roomId),
+  ])
+
+  const votes = voteCount ?? 0
+  const members = memberCount ?? 1
+
+  // 過半数チェック（2人の場合は全員、3人以上は過半数）
+  const threshold = members === 2 ? 2 : Math.floor(members / 2) + 1
+  if (votes >= threshold) {
+    const result = await completeNovel(roomId)
+    if (result.error) return { error: result.error }
+    redirect(`/novels/${result.novelId}`)
   }
 
-  redirect(`/novels/${novel.id}`)
+  return { success: true, votes, members, threshold }
 }

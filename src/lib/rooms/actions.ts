@@ -8,6 +8,9 @@ const createRoomSchema = z.object({
   genre: z.string().min(1, 'ジャンルを入力してください').max(20),
   max_players: z.coerce.number().int().min(2).max(8),
   char_limit: z.coerce.number().int().min(20).max(200),
+  timer_seconds: z.coerce.number().int().refine((v) => [30, 60, 90].includes(v), {
+    message: 'タイマーは30・60・90秒のいずれかを選択してください',
+  }),
 })
 
 const MEMBER_COLORS = [
@@ -33,13 +36,14 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
     genre: formData.get('genre'),
     max_players: formData.get('max_players'),
     char_limit: formData.get('char_limit'),
+    timer_seconds: formData.get('timer_seconds'),
   })
 
   if (!result.success) {
     return { error: result.error.issues[0].message }
   }
 
-  const { genre, max_players, char_limit } = result.data
+  const { genre, max_players, char_limit, timer_seconds } = result.data
 
   // コード衝突時は最大3回リトライ
   let room = null
@@ -47,7 +51,7 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
     const join_code = generateJoinCode()
     const { data, error } = await supabase
       .from('rooms')
-      .insert({ genre, max_players, char_limit, created_by: user.id, join_code })
+      .insert({ genre, max_players, char_limit, timer_seconds, created_by: user.id, join_code })
       .select('id')
       .single()
 

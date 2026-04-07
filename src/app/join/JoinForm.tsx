@@ -34,7 +34,7 @@ export function JoinForm() {
           maxLength={10}
           autoComplete="off"
           autoCapitalize="characters"
-          className="w-full text-center text-2xl font-mono tracking-widest uppercase border-2 border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500"
+          className="w-full text-center text-2xl font-mono tracking-widest uppercase border-2 border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:border-indigo-500"
         />
         {state?.error && (
           <p className="text-sm text-red-500 text-center">{state.error}</p>

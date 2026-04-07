@@ -112,7 +112,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
 
   // 執筆中
   if (room.status === 'in_progress') {
-    const { data: session, error: sessionError } = await supabase
+    const { data: session } = await supabase
       .from('sessions')
       .select('*')
       .eq('room_id', params.id)
@@ -120,8 +120,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       .limit(1)
       .single()
 
-    if (sessionError || !session) {
-      console.error('[RoomPage] session fetch error:', sessionError)
+    if (!session) {
       return (
         <>
           <Header />
@@ -132,26 +131,23 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       )
     }
 
-    const { data: sentences } = await supabase
-      .from('sentences')
-      .select('*')
-      .eq('session_id', session.id)
-      .order('seq', { ascending: true })
-
-    const isHost = membersWithProfile.some(
-      (m: { user_id: string; join_order: number }) => m.user_id === user.id && m.join_order === 0,
-    )
+    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }] = await Promise.all([
+      supabase.from('sentences').select('*').eq('session_id', session.id).order('seq', { ascending: true }),
+      supabase.from('completion_votes').select('*', { count: 'exact', head: true }).eq('room_id', params.id),
+      supabase.from('completion_votes').select('user_id').eq('room_id', params.id).eq('user_id', user.id).maybeSingle(),
+    ])
 
     return (
       <>
         <Header />
         <WritingRoom
-          room={{ id: room.id, genre: room.genre, char_limit: room.char_limit }}
+          room={{ id: room.id, genre: room.genre, char_limit: room.char_limit, timer_seconds: room.timer_seconds ?? 60 }}
           session={session}
           members={membersWithProfile}
           initialSentences={sentences ?? []}
           currentUserId={user.id}
-          isHost={isHost}
+          initialVoteCount={voteCount ?? 0}
+          myVoted={!!myVoteData}
         />
       </>
     )

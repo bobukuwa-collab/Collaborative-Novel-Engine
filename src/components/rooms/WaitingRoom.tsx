@@ -130,7 +130,7 @@ export function WaitingRoom({ room, currentUserId, inviteUrl }: Props) {
                 type="text"
                 readOnly
                 value={inviteUrl}
-                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md bg-gray-50 text-gray-600 truncate"
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md bg-gray-50 text-gray-900 truncate"
               />
               <button
                 onClick={handleCopy}
