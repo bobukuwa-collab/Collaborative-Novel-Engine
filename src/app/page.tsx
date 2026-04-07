@@ -14,8 +14,8 @@ export default async function HomePage() {
       <main className="min-h-screen bg-gray-50 py-12 px-4">
         <div className="max-w-lg mx-auto text-center space-y-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">協調小説エンジン</h1>
-            <p className="text-gray-500">見知らぬ誰かと、小説を完成させよう</p>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">言葉のバトン</h1>
+            <p className="text-gray-500">見知らぬ誰かと、言葉をつなごう</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
@@ -34,9 +34,12 @@ export default async function HomePage() {
               href="/library"
               className="py-3 px-8 bg-white text-gray-600 font-semibold rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
             >
-              ライブラリ
+              コレクション
             </Link>
           </div>
+          <p className="text-sm text-gray-400">
+            友達から招待リンクを受け取った場合はそのURLを開いてください
+          </p>
         </div>
       </main>
     </>

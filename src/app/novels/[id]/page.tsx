@@ -110,7 +110,7 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
                   <p className="text-xs text-gray-500">
                     {authorNames.length > 0 ? authorNames.join('・') + ' 共著' : ''}
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">{publishedAt} 完結　全{sentences.length}文</p>
+                  <p className="text-xs text-gray-400 mt-1">{publishedAt} 完成　全{sentences.length}フレーズ</p>
                 </div>
                 <LikeButton novelId={params.id} initialLiked={!!myLike} initialCount={likeCount ?? 0} />
               </div>
@@ -130,7 +130,7 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
 
             <div className="px-8 py-8">
               {sentences.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-8">文章がありません。</p>
+                <p className="text-gray-400 text-sm text-center py-8">フレーズがありません。</p>
               ) : (
                 <div
                   className="text-gray-800 leading-[2.2] text-[0.95rem]"
@@ -170,14 +170,14 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
           {/* 貢献率グラフ */}
           {contributionData.length > 0 && (
             <div className="bg-white rounded-xl shadow p-6">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">貢献率</h2>
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">フレーズ貢献率</h2>
               <ContributionChart data={contributionData} />
               <div className="mt-4 space-y-1">
                 {contributionData.map((d) => (
                   <div key={d.name} className="flex items-center gap-2 text-xs text-gray-600">
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
                     <span className="font-medium">{d.name}</span>
-                    <span className="text-gray-400">{d.sentences}文 · {d.characters}字</span>
+                    <span className="text-gray-400">{d.sentences}フレーズ · {d.characters}字</span>
                   </div>
                 ))}
               </div>

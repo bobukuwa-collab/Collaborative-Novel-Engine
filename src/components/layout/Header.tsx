@@ -13,7 +13,7 @@ export async function Header() {
 
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-      <a href="/" className="text-lg font-bold text-indigo-600">協調小説エンジン</a>
+      <a href="/" className="text-lg font-bold text-indigo-600">言葉のバトン</a>
       <div className="flex items-center gap-4">
         <a href="/library" className="text-sm text-gray-600 hover:text-indigo-600 transition-colors">
           ライブラリ

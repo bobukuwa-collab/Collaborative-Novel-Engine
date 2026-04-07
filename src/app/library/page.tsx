@@ -72,7 +72,7 @@ export default async function LibraryPage() {
       <main className="min-h-screen bg-gray-50 py-10 px-4">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-xl font-bold text-gray-800">公開ライブラリ</h1>
+            <h1 className="text-xl font-bold text-gray-800">コレクション</h1>
             <a
               href="/rooms/new"
               className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors"
@@ -83,7 +83,7 @@ export default async function LibraryPage() {
 
           {(!novels || novels.length === 0) ? (
             <div className="bg-white rounded-xl shadow p-8 text-center text-gray-400">
-              まだ完結作品がありません。最初の共著小説を書きましょう！
+              まだ完成作品がありません。最初の言葉のバトンを始めましょう！
             </div>
           ) : (
             <ul className="space-y-3">
@@ -102,7 +102,7 @@ export default async function LibraryPage() {
                         <div>
                           <h2 className="font-semibold text-gray-800 mb-1">{novel.title}</h2>
                           <p className="text-xs text-gray-500">
-                            {genre} · {sentenceCounts[novel.id] ?? 0}文 · {publishedAt}
+                            {genre} · {sentenceCounts[novel.id] ?? 0}フレーズ · {publishedAt}
                           </p>
                         </div>
                         <div className="flex items-center gap-1 text-pink-400 text-sm flex-shrink-0">

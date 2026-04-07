@@ -130,7 +130,7 @@ async function completeNovel(roomId: string) {
     .eq('id', roomId)
     .single()
 
-  const title = room ? `${room.genre}の共著小説` : '無題の共著小説'
+  const title = room ? `${room.genre}の言葉` : '無題の言葉'
 
   const { data: novel, error: novelError } = await supabase
     .from('novels')

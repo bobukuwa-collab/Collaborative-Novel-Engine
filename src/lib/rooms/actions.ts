@@ -7,7 +7,7 @@ import { z } from 'zod'
 const createRoomSchema = z.object({
   genre: z.string().min(1, 'ジャンルを入力してください').max(20),
   max_players: z.coerce.number().int().min(2).max(8),
-  char_limit: z.coerce.number().int().min(20).max(200),
+  char_limit: z.coerce.number().int().min(20).max(80),
   timer_seconds: z.coerce.number().int().refine((v) => [30, 60, 90].includes(v), {
     message: 'タイマーは30・60・90秒のいずれかを選択してください',
   }),

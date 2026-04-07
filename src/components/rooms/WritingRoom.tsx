@@ -232,11 +232,12 @@ export function WritingRoom({
               <span className={content.length > room.char_limit ? 'text-red-500' : ''}>
                 {content.length} / {room.char_limit}文字
               </span>
+
             </div>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="続きを書いてください..."
+              placeholder="言葉を紡いでください..."
               rows={3}
               maxLength={room.char_limit}
               disabled={isPending}
@@ -304,9 +305,9 @@ function NovelViewer({ sentences, members }: { sentences: Sentence[]; members: M
   const memberMap = new Map(members.map((m) => [m.user_id, m]))
   return (
     <div className="bg-white rounded-xl shadow p-4 min-h-32 max-h-96 overflow-y-auto">
-      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">物語</h2>
+      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">言葉</h2>
       {sentences.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-4">まだ文章がありません。最初の1文を書きましょう！</p>
+        <p className="text-gray-400 text-sm text-center py-4">まだフレーズがありません。最初の言葉を紡ぎましょう！</p>
       ) : (
         <div className="space-y-1">
           {[...sentences].sort((a, b) => a.seq - b.seq).map((sentence) => {

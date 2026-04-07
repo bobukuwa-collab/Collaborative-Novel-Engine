@@ -3,7 +3,18 @@
 import { useFormState, useFormStatus } from 'react-dom'
 import { createRoom } from '@/lib/rooms/actions'
 
-const GENRES = ['ファンタジー', 'SF', 'ミステリー', '恋愛', 'ホラー', '日常', 'その他']
+const CATEGORIES = [
+  '愛と恋',
+  '自然と季節',
+  '哲学と人生',
+  '夢と希望',
+  'ユーモア',
+  '孤独と静寂',
+  '友情と仲間',
+  '宇宙と神秘',
+  '食と日常',
+  'ランダム',
+]
 
 const SELECT_CLASS = 'w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
@@ -26,16 +37,16 @@ export function CreateRoomForm() {
   return (
     <form action={formAction} className="space-y-5">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">ジャンル</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
         <select name="genre" required className={SELECT_CLASS}>
-          {GENRES.map((g) => (
-            <option key={g} value={g}>{g}</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
           ))}
         </select>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">最大人数</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">参加人数</label>
         <select name="max_players" defaultValue="3" className={SELECT_CLASS}>
           {[2, 3, 4, 5, 6, 7, 8].map((n) => (
             <option key={n} value={n}>{n}人</option>
@@ -56,14 +67,14 @@ export function CreateRoomForm() {
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          1文あたりの文字数上限
+          1フレーズあたりの文字数上限
         </label>
-        <select name="char_limit" defaultValue="100" className={SELECT_CLASS}>
-          <option value="20">20文字</option>
-          <option value="50">50文字</option>
-          <option value="100">100文字</option>
-          <option value="150">150文字</option>
-          <option value="200">200文字</option>
+        <select name="char_limit" defaultValue="40" className={SELECT_CLASS}>
+          <option value="20">20文字（一言）</option>
+          <option value="30">30文字（短句）</option>
+          <option value="40">40文字（フレーズ）</option>
+          <option value="60">60文字（詩的な一節）</option>
+          <option value="80">80文字（格言）</option>
         </select>
       </div>
 
