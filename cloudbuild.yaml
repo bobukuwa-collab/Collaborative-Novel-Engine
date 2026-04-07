@@ -9,11 +9,10 @@ steps:
     entrypoint: 'bash'
     args: ['-c', 'corepack enable && pnpm run lint']
 
-  # TODO: Vitest導入後に有効化
-  # - id: test
-  #   name: 'node:20'
-  #   entrypoint: 'bash'
-  #   args: ['-c', 'corepack enable && pnpm run test']
+  - id: test
+    name: 'node:20'
+    entrypoint: 'bash'
+    args: ['-c', 'corepack enable && pnpm run test']
 
   - id: build
     name: 'node:20'
@@ -64,6 +63,17 @@ steps:
       - '--min-instances=0'
       - '--set-env-vars=NEXT_PUBLIC_SUPABASE_URL=$$NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY=$$NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SITE_URL=$$NEXT_PUBLIC_SITE_URL'
 
+
+  # デプロイ後に本番URLへLighthouse計測（モバイル・スコア85未満でwarn）
+  - id: lighthouse
+    name: 'node:20'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        apt-get update -qq && apt-get install -y chromium 2>/dev/null
+        npx --yes @lhci/cli@0.14 autorun
+    waitFor: ['deploy']
 
 substitutions:
   _REGION: 'asia-northeast1'

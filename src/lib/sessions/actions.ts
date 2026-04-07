@@ -25,24 +25,26 @@ export async function startSession(roomId: string, _formData: FormData): Promise
 
   if (!member || member.join_order !== 0) return
 
+  // 既にセッションが存在する場合はスキップ（二重送信防止）
+  const { data: existingSession } = await supabase
+    .from('sessions')
+    .select('id')
+    .eq('room_id', roomId)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingSession) return
+
   const { error: sessionError } = await supabase
     .from('sessions')
     .insert({ room_id: roomId, current_turn: 0, timer_end: nextTimerEnd() })
 
-  if (sessionError) {
-    console.error('[startSession] session insert error:', sessionError)
-    return
-  }
+  if (sessionError) return
 
-  const { error: roomError } = await supabase
+  await supabase
     .from('rooms')
     .update({ status: 'in_progress' })
     .eq('id', roomId)
-
-  if (roomError) {
-    console.error('[startSession] room update error:', roomError)
-    return
-  }
 
   redirect(`/rooms/${roomId}`)
 }
@@ -110,7 +112,7 @@ export async function skipTurn(sessionId: string, currentTurn: number) {
   return { success: true }
 }
 
-export async function endSession(roomId: string, _sessionId: string) {
+export async function endSession(roomId: string, _sessionId: string, title?: string) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '認証が必要です' }
@@ -127,11 +129,12 @@ export async function endSession(roomId: string, _sessionId: string) {
     return { error: 'ホストのみ完結できます' }
   }
 
-  // novelsテーブルにレコードを作成
+  // novelsテーブルにレコードを作成（Realtimeで他ユーザーへ通知される）
   const { data: novel, error: novelError } = await supabase
     .from('novels')
     .insert({
       room_id: roomId,
+      title: title?.trim() || '無題の共著小説',
       status: 'completed',
       published_at: new Date().toISOString(),
     })

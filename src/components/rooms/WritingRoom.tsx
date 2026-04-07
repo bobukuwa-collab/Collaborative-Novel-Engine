@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { submitSentence, skipTurn, endSession } from '@/lib/sessions/actions'
 
@@ -50,12 +51,15 @@ export function WritingRoom({
   currentUserId,
   isHost,
 }: Props) {
+  const router = useRouter()
   const [session, setSession] = useState(initialSession)
   const [sentences, setSentences] = useState(initialSentences)
   const [content, setContent] = useState('')
   const [timeLeft, setTimeLeft] = useState(60)
   const [error, setError] = useState<string | null>(null)
   const [endError, setEndError] = useState<string | null>(null)
+  const [showEndForm, setShowEndForm] = useState(false)
+  const [novelTitle, setNovelTitle] = useState('')
   const [isPending, startTransition] = useTransition()
   const [isEnding, startEndTransition] = useTransition()
   const skipCalledRef = useRef(false)
@@ -121,16 +125,28 @@ export function WritingRoom({
         },
         (payload) => setSentences((prev) => [...prev, payload.new as Sentence]),
       )
+      .on(
+        // novels INSERT = 完結シグナル。全員を小説ページへリダイレクト
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'novels',
+          filter: `room_id=eq.${room.id}`,
+        },
+        (payload) => {
+          router.push(`/novels/${payload.new.id}`)
+        },
+      )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [room.id, initialSession.id])
+  }, [room.id, initialSession.id, router])
 
   const handleEnd = () => {
-    if (!window.confirm('本当に小説を完結しますか？この操作は取り消せません。')) return
     setEndError(null)
     startEndTransition(async () => {
-      const result = await endSession(room.id, session.id)
+      const result = await endSession(room.id, session.id, novelTitle)
       if (result?.error) setEndError(result.error)
     })
   }
@@ -173,17 +189,46 @@ export function WritingRoom({
         />
 
         {isHost && (
-          <div className="flex justify-end">
-            <button
-              onClick={handleEnd}
-              disabled={isEnding || sentences.length === 0}
-              className="px-4 py-1.5 text-xs font-medium text-white bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors"
-            >
-              {isEnding ? '完結処理中...' : '小説を完結する'}
-            </button>
+          <div className="flex flex-col items-end gap-2">
+            {!showEndForm ? (
+              <button
+                onClick={() => setShowEndForm(true)}
+                disabled={sentences.length === 0}
+                className="px-4 py-1.5 text-xs font-medium text-white bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors"
+              >
+                小説を完結する
+              </button>
+            ) : (
+              <div className="bg-white rounded-xl shadow p-4 w-full space-y-3">
+                <p className="text-sm font-medium text-gray-700">小説のタイトルを入力してください</p>
+                <input
+                  type="text"
+                  value={novelTitle}
+                  onChange={(e) => setNovelTitle(e.target.value)}
+                  placeholder="無題の共著小説（省略可）"
+                  maxLength={50}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => { setShowEndForm(false); setNovelTitle('') }}
+                    className="px-4 py-1.5 text-xs text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={handleEnd}
+                    disabled={isEnding}
+                    className="px-4 py-1.5 text-xs font-medium text-white bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-colors"
+                  >
+                    {isEnding ? '完結処理中...' : '完結する'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {endError && <p className="text-xs text-red-500">{endError}</p>}
           </div>
         )}
-        {endError && <p className="text-xs text-red-500 text-right">{endError}</p>}
 
         <NovelViewer sentences={sentences} members={sortedMembers} />
 

@@ -100,15 +100,9 @@ create policy "rooms: insert authenticated" on public.rooms
 create policy "rooms: update by creator" on public.rooms
   for update using (auth.uid() = created_by);
 
--- room_members: 同ルームのメンバーのみ閲覧可能
-create policy "room_members: read same room" on public.room_members
-  for select using (
-    exists (
-      select 1 from public.room_members rm
-      where rm.room_id = room_members.room_id
-        and rm.user_id = auth.uid()
-    )
-  );
+-- room_members: 認証済みユーザーは閲覧可能（自己参照による無限再帰を回避）
+create policy "room_members: read authenticated" on public.room_members
+  for select using (auth.role() = 'authenticated');
 create policy "room_members: insert self" on public.room_members
   for insert with check (auth.uid() = user_id);
 
