@@ -102,10 +102,19 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
   // 待機中
   if (room.status === 'waiting') {
     const roomWithMembers = { ...room, room_members: membersWithProfile, join_code: room.join_code ?? '' }
+    const { data: themesData } = await supabase
+      .from('room_themes')
+      .select('user_id, theme_text')
+      .eq('room_id', params.id)
     return (
       <>
         <Header />
-        <WaitingRoom room={roomWithMembers} currentUserId={user.id} inviteUrl={inviteUrl} />
+        <WaitingRoom
+          room={roomWithMembers}
+          currentUserId={user.id}
+          inviteUrl={inviteUrl}
+          initialThemes={themesData ?? []}
+        />
       </>
     )
   }
@@ -131,23 +140,31 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       )
     }
 
-    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }] = await Promise.all([
+    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }, { data: themesData }] = await Promise.all([
       supabase.from('sentences').select('*').eq('session_id', session.id).order('seq', { ascending: true }),
       supabase.from('completion_votes').select('*', { count: 'exact', head: true }).eq('room_id', params.id),
       supabase.from('completion_votes').select('user_id').eq('room_id', params.id).eq('user_id', user.id).maybeSingle(),
+      supabase.from('room_themes').select('user_id, theme_text').eq('room_id', params.id),
     ])
 
     return (
       <>
         <Header />
         <WritingRoom
-          room={{ id: room.id, genre: room.genre, char_limit: room.char_limit, timer_seconds: room.timer_seconds ?? 60 }}
+          room={{
+            id: room.id,
+            genre: room.genre,
+            char_limit: room.char_limit,
+            timer_seconds: room.timer_seconds ?? 60,
+            turn_order_mode: room.turn_order_mode ?? 'fixed',
+          }}
           session={session}
           members={membersWithProfile}
           initialSentences={sentences ?? []}
           currentUserId={user.id}
           initialVoteCount={voteCount ?? 0}
           myVoted={!!myVoteData}
+          initialThemes={themesData ?? []}
         />
       </>
     )

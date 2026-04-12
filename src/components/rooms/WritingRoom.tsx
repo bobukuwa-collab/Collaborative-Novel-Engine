@@ -28,11 +28,17 @@ type Member = {
   users: { display_name: string } | null
 }
 
+type Theme = {
+  user_id: string
+  theme_text: string
+}
+
 type Room = {
   id: string
   genre: string
   char_limit: number
   timer_seconds: number
+  turn_order_mode: string
 }
 
 type Props = {
@@ -43,6 +49,27 @@ type Props = {
   currentUserId: string
   initialVoteCount: number
   myVoted: boolean
+  initialThemes: Theme[]
+}
+
+/**
+ * セッションIDをシードとした決定論的シャッフル。
+ * 全クライアントが同じ乱数列を生成するので DB 保存不要。
+ */
+function seededShuffle<T>(arr: T[], seed: string): T[] {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) {
+    hash = Math.imul(hash ^ seed.charCodeAt(i), 2654435761) | 0
+  }
+  const result = [...arr]
+  for (let i = result.length - 1; i > 0; i--) {
+    hash = Math.imul(hash ^ (hash >>> 16), 2246822519) | 0
+    hash = Math.imul(hash ^ (hash >>> 13), 3266489917) | 0
+    hash = (hash ^ (hash >>> 16)) >>> 0
+    const j = hash % (i + 1)
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
 }
 
 export function WritingRoom({
@@ -53,10 +80,12 @@ export function WritingRoom({
   currentUserId,
   initialVoteCount,
   myVoted: initialMyVoted,
+  initialThemes,
 }: Props) {
   const router = useRouter()
   const [session, setSession] = useState(initialSession)
   const [sentences, setSentences] = useState(initialSentences)
+  const [themes, setThemes] = useState<Theme[]>(initialThemes)
   const [content, setContent] = useState('')
   const [timeLeft, setTimeLeft] = useState(room.timer_seconds)
   const [error, setError] = useState<string | null>(null)
@@ -69,18 +98,27 @@ export function WritingRoom({
   const contentRef = useRef(content)
   useEffect(() => { contentRef.current = content }, [content])
 
+  // ターン順を決定（random モードはセッションIDをシードにシャッフル）
   const sortedMembers = [...members].sort((a, b) => a.join_order - b.join_order)
-  const memberCount = sortedMembers.length
+  const orderedMembers = room.turn_order_mode === 'random'
+    ? seededShuffle(sortedMembers, session.id)
+    : sortedMembers
+  const memberCount = orderedMembers.length
   const threshold = memberCount === 2 ? 2 : Math.floor(memberCount / 2) + 1
-  const currentMemberIndex = session.current_turn % sortedMembers.length
-  const currentMember = sortedMembers[currentMemberIndex]
+  const currentMemberIndex = session.current_turn % memberCount
+  const currentMember = orderedMembers[currentMemberIndex]
   const isMyTurn = currentMember?.user_id === currentUserId
+
+  // 周回数・ターン数
+  const roundNumber = Math.floor(session.current_turn / memberCount) + 1
+  const turnInRound = (session.current_turn % memberCount) + 1
 
   useEffect(() => {
     skipCalledRef.current = false
     setError(null)
   }, [session.current_turn])
 
+  // タイマーカウントダウン
   useEffect(() => {
     const update = () => {
       const remaining = Math.max(
@@ -94,26 +132,26 @@ export function WritingRoom({
     return () => clearInterval(interval)
   }, [session.timer_end])
 
+  // タイムアウト時の自動送信 or スキップ
   useEffect(() => {
     if (timeLeft === 0 && isMyTurn && !skipCalledRef.current) {
       skipCalledRef.current = true
       const currentContent = contentRef.current.trim().slice(0, room.char_limit)
       startTransition(async () => {
         if (currentContent) {
-          // 入力中のテキストがあれば強制送信
           const result = await submitSentence(
             session.id, currentContent, session.current_turn,
             room.char_limit, room.timer_seconds,
           )
           if (!result?.error) setContent('')
         } else {
-          // 何も入力していなければスキップ
           await skipTurn(session.id, session.current_turn, room.timer_seconds)
         }
       })
     }
   }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds, room.char_limit])
 
+  // Realtime 購読
   useEffect(() => {
     const supabase = createClient()
 
@@ -135,6 +173,18 @@ export function WritingRoom({
         event: 'INSERT', schema: 'public', table: 'novels',
         filter: `room_id=eq.${room.id}`,
       }, (payload) => router.push(`/novels/${payload.new.id}`))
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'room_themes',
+        filter: `room_id=eq.${room.id}`,
+      }, (payload) => {
+        const updated = payload.new as Theme
+        setThemes((prev) => {
+          const exists = prev.some((t) => t.user_id === updated.user_id)
+          return exists
+            ? prev.map((t) => t.user_id === updated.user_id ? updated : t)
+            : [...prev, updated]
+        })
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -166,6 +216,9 @@ export function WritingRoom({
     })
   }
 
+  // 現在のターンプレイヤーのテーマ
+  const currentTheme = themes.find((t) => t.user_id === currentMember?.user_id)
+
   return (
     <main className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-2xl mx-auto space-y-4">
@@ -173,18 +226,27 @@ export function WritingRoom({
         {/* ヘッダー */}
         <div className="bg-white rounded-xl shadow p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-gray-500">ジャンル</p>
+            <p className="text-xs text-gray-500">カテゴリ</p>
             <h1 className="font-bold text-gray-800">{room.genre}</h1>
           </div>
           <TimerDisplay timeLeft={timeLeft} total={room.timer_seconds} />
         </div>
 
-        {/* ターン表示 */}
+        {/* ターン表示 + テーマ */}
         <TurnIndicator
           currentMember={currentMember}
           isMyTurn={isMyTurn}
           turnNumber={session.current_turn + 1}
+          roundNumber={roundNumber}
+          turnInRound={turnInRound}
+          memberCount={memberCount}
+          currentTheme={currentTheme?.theme_text}
         />
+
+        {/* テーマ一覧（設定済みの場合のみ表示） */}
+        {themes.length > 0 && (
+          <ThemePanel themes={themes} members={orderedMembers} currentUserId={currentUserId} />
+        )}
 
         {/* 完結投票 */}
         <div className="bg-white rounded-xl shadow p-4">
@@ -196,7 +258,6 @@ export function WritingRoom({
                 <span className="text-gray-400"> / {memberCount}人</span>
                 　（{threshold}票で完結）
               </p>
-              {/* 投票バー */}
               <div className="mt-2 w-40 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-indigo-400 rounded-full transition-all"
@@ -232,7 +293,6 @@ export function WritingRoom({
               <span className={content.length > room.char_limit ? 'text-red-500' : ''}>
                 {content.length} / {room.char_limit}文字
               </span>
-
             </div>
             <textarea
               value={content}
@@ -267,7 +327,7 @@ export function WritingRoom({
 }
 
 function TimerDisplay({ timeLeft, total }: { timeLeft: number; total: number }) {
-  const isWarning = timeLeft <= 10
+  const isWarning = timeLeft <= Math.min(10, total * 0.2)
   const pct = Math.max(0, timeLeft / total)
 
   return (
@@ -285,18 +345,68 @@ function TimerDisplay({ timeLeft, total }: { timeLeft: number; total: number }) 
   )
 }
 
-function TurnIndicator({ currentMember, isMyTurn, turnNumber }: {
-  currentMember: Member | undefined; isMyTurn: boolean; turnNumber: number
+function TurnIndicator({
+  currentMember,
+  isMyTurn,
+  turnNumber,
+  roundNumber,
+  turnInRound,
+  memberCount,
+  currentTheme,
+}: {
+  currentMember: Member | undefined
+  isMyTurn: boolean
+  turnNumber: number
+  roundNumber: number
+  turnInRound: number
+  memberCount: number
+  currentTheme: string | undefined
 }) {
   return (
-    <div className={`rounded-xl shadow p-3 flex items-center gap-3 ${isMyTurn ? 'bg-indigo-50 border border-indigo-200' : 'bg-white'}`}>
-      <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: currentMember?.color ?? '#9ca3af' }} />
-      <span className="text-sm font-medium text-gray-700">
-        第{turnNumber}ターン：
-        {isMyTurn
-          ? <span className="text-indigo-600 font-bold"> あなたのターン！</span>
-          : <span> {currentMember?.users?.display_name ?? '不明'}さん</span>}
-      </span>
+    <div className={`rounded-xl shadow p-3 space-y-1 ${isMyTurn ? 'bg-indigo-50 border border-indigo-200' : 'bg-white'}`}>
+      <div className="flex items-center gap-3">
+        <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: currentMember?.color ?? '#9ca3af' }} />
+        <span className="text-sm font-medium text-gray-700">
+          第{roundNumber}周 {turnInRound}/{memberCount}　ターン{turnNumber}：
+          {isMyTurn
+            ? <span className="text-indigo-600 font-bold"> あなたのターン！</span>
+            : <span> {currentMember?.users?.display_name ?? '不明'}さん</span>}
+        </span>
+      </div>
+      {currentTheme && (
+        <p className="text-xs text-gray-500 pl-7">
+          テーマ：<span className="font-medium text-gray-700">「{currentTheme}」</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ThemePanel({ themes, members, currentUserId }: {
+  themes: Theme[]
+  members: Member[]
+  currentUserId: string
+}) {
+  return (
+    <div className="bg-white rounded-xl shadow p-4">
+      <h2 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">各自のテーマ</h2>
+      <div className="flex flex-wrap gap-2">
+        {members.map((m) => {
+          const theme = themes.find((t) => t.user_id === m.user_id)
+          if (!theme) return null
+          const isMe = m.user_id === currentUserId
+          return (
+            <div
+              key={m.user_id}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${isMe ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-50 border border-gray-200'}`}
+            >
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
+              <span className="text-gray-500">{m.users?.display_name ?? '不明'}：</span>
+              <span className="font-medium text-gray-800">「{theme.theme_text}」</span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
