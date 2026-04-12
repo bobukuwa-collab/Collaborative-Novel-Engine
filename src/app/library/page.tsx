@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { Header } from '@/components/layout/Header'
+import { LibraryList } from '@/components/novels/LibraryList'
 import { redirect } from 'next/navigation'
 
 export default async function LibraryPage() {
@@ -81,41 +82,17 @@ export default async function LibraryPage() {
             </a>
           </div>
 
-          {(!novels || novels.length === 0) ? (
-            <div className="bg-white rounded-xl shadow p-8 text-center text-gray-400">
-              まだ完成作品がありません。最初の言葉のバトンを始めましょう！
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {novels.map((novel) => {
-                const genre = (novel.rooms as unknown as { genre: string } | null)?.genre ?? ''
-                const publishedAt = novel.published_at
-                  ? new Date(novel.published_at).toLocaleDateString('ja-JP')
-                  : ''
-                return (
-                  <li key={novel.id}>
-                    <a
-                      href={`/novels/${novel.id}`}
-                      className="block bg-white rounded-xl shadow p-5 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h2 className="font-semibold text-gray-800 mb-1">{novel.title}</h2>
-                          <p className="text-xs text-gray-500">
-                            {genre} · {sentenceCounts[novel.id] ?? 0}フレーズ · {publishedAt}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1 text-pink-400 text-sm flex-shrink-0">
-                          <span>♥</span>
-                          <span>{likeCounts[novel.id] ?? 0}</span>
-                        </div>
-                      </div>
-                    </a>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+          <LibraryList
+            novels={(novels ?? []).map((novel) => ({
+              id: novel.id,
+              title: novel.title,
+              published_at: novel.published_at,
+              room_id: novel.room_id,
+              genre: (novel.rooms as unknown as { genre: string } | null)?.genre ?? '',
+              likeCount: likeCounts[novel.id] ?? 0,
+              sentenceCount: sentenceCounts[novel.id] ?? 0,
+            }))}
+          />
         </div>
       </main>
     </>

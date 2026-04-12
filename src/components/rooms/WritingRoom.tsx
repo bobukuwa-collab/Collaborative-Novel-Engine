@@ -1,9 +1,52 @@
 'use client'
 
-import { useState, useEffect, useRef, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { submitSentence, skipTurn, voteToEnd } from '@/lib/sessions/actions'
+
+// Web Speech API の型定義
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition
+    webkitSpeechRecognition: new () => SpeechRecognition
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  onresult: ((e: SpeechRecognitionEvent) => void) | null
+  onend: (() => void) | null
+  onerror: ((e: SpeechRecognitionErrorEvent) => void) | null
+  start(): void
+  stop(): void
+}
+
+interface SpeechRecognitionEvent {
+  resultIndex: number
+  results: SpeechRecognitionResultList
+}
+
+interface SpeechRecognitionResultList {
+  length: number
+  item(index: number): SpeechRecognitionResult
+  [index: number]: SpeechRecognitionResult
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean
+  [index: number]: SpeechRecognitionAlternative
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string
+}
 
 type Session = {
   id: string
@@ -98,6 +141,45 @@ export function WritingRoom({
   const contentRef = useRef(content)
   useEffect(() => { contentRef.current = content }, [content])
 
+  // 音声入力
+  const [isListening, setIsListening] = useState(false)
+  const [speechError, setSpeechError] = useState<string | null>(null)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const isSpeechSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+
+  const stopListening = useCallback(() => {
+    recognitionRef.current?.stop()
+    setIsListening(false)
+  }, [])
+
+  const toggleListening = useCallback(() => {
+    if (isListening) {
+      stopListening()
+      return
+    }
+    const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition
+    const recognition = new SpeechRecognitionCtor()
+    recognition.lang = 'ja-JP'
+    recognition.continuous = false
+    recognition.interimResults = false
+
+    recognition.onresult = (e: SpeechRecognitionEvent) => {
+      const transcript = e.results[e.resultIndex][0].transcript
+      setContent((prev) => (prev + transcript).slice(0, room.char_limit))
+      setSpeechError(null)
+    }
+    recognition.onend = () => setIsListening(false)
+    recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+      setSpeechError(e.error === 'not-allowed' ? 'マイクの使用が許可されていません' : `音声認識エラー: ${e.error}`)
+      setIsListening(false)
+    }
+
+    recognitionRef.current = recognition
+    recognition.start()
+    setIsListening(true)
+    setSpeechError(null)
+  }, [isListening, stopListening, room.char_limit])
+
   // ターン順を決定（random モードはセッションIDをシードにシャッフル）
   const sortedMembers = [...members].sort((a, b) => a.join_order - b.join_order)
   const orderedMembers = room.turn_order_mode === 'random'
@@ -108,6 +190,11 @@ export function WritingRoom({
   const currentMemberIndex = session.current_turn % memberCount
   const currentMember = orderedMembers[currentMemberIndex]
   const isMyTurn = currentMember?.user_id === currentUserId
+
+  // ターン切り替え時に音声認識を停止
+  useEffect(() => {
+    if (!isMyTurn) stopListening()
+  }, [isMyTurn, stopListening])
 
   // 周回数・ターン数
   const roundNumber = Math.floor(session.current_turn / memberCount) + 1
@@ -294,15 +381,36 @@ export function WritingRoom({
                 {content.length} / {room.char_limit}文字
               </span>
             </div>
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="言葉を紡いでください..."
-              rows={3}
-              maxLength={room.char_limit}
-              disabled={isPending}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-            />
+            <div className="relative">
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder={isListening ? '🎤 聞き取り中...' : '言葉を紡いでください...'}
+                rows={3}
+                maxLength={room.char_limit}
+                disabled={isPending}
+                className={`w-full border rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 resize-none pr-10 ${
+                  isListening
+                    ? 'border-red-400 focus:ring-red-300'
+                    : 'border-gray-300 focus:ring-indigo-500'
+                }`}
+              />
+              {isSpeechSupported && (
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  title={isListening ? '音声入力を停止' : '音声入力を開始'}
+                  className={`absolute right-2 top-2 p-1.5 rounded-md transition-colors ${
+                    isListening
+                      ? 'text-red-500 bg-red-50 hover:bg-red-100 animate-pulse'
+                      : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'
+                  }`}
+                >
+                  🎤
+                </button>
+              )}
+            </div>
+            {speechError && <p className="text-xs text-red-500">{speechError}</p>}
             {error && <p className="text-xs text-red-500">{error}</p>}
             <button
               type="submit"

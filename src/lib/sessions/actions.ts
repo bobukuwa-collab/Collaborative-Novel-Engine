@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
 function nextTimerEnd(durationSeconds: number): string {
@@ -151,6 +152,10 @@ async function completeNovel(roomId: string) {
     .from('rooms')
     .update({ status: 'completed' })
     .eq('id', roomId)
+
+  // ライブラリ一覧と作品ページをキャッシュ破棄して即時更新
+  revalidatePath('/library')
+  revalidatePath(`/novels/${novel.id}`)
 
   return { novelId: novel.id }
 }
