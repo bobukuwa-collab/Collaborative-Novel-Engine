@@ -9,7 +9,13 @@ const MEMBER_COLORS = [
   '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6',
 ]
 
-export default async function RoomPage({ params }: { params: { id: string } }) {
+export default async function RoomPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string }
+  searchParams?: Record<string, string | string[] | undefined>
+}) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -88,6 +94,8 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
   }
 
   const inviteUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001'}/rooms/${params.id}`
+  const startErrorRaw = searchParams?.startError
+  const startError = typeof startErrorRaw === 'string' ? startErrorRaw : undefined
 
   // メンバーにプロファイルを付与
   const membersWithProfile = roomMembers
@@ -110,10 +118,11 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       <>
         <Header />
         <WaitingRoom
-          room={roomWithMembers}
+          room={{ ...roomWithMembers, game_mode: room.game_mode ?? 'open' }}
           currentUserId={user.id}
           inviteUrl={inviteUrl}
           initialThemes={themesData ?? []}
+          startError={startError}
         />
       </>
     )
@@ -140,12 +149,19 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       )
     }
 
-    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }, { data: themesData }] = await Promise.all([
-      supabase.from('sentences').select('*').eq('session_id', session.id).order('seq', { ascending: true }),
-      supabase.from('completion_votes').select('*', { count: 'exact', head: true }).eq('room_id', params.id),
-      supabase.from('completion_votes').select('user_id').eq('room_id', params.id).eq('user_id', user.id).maybeSingle(),
-      supabase.from('room_themes').select('user_id, theme_text').eq('room_id', params.id),
-    ])
+    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }, { data: themesData }, { data: myScoreRow }] =
+      await Promise.all([
+        supabase.from('sentences').select('*').eq('session_id', session.id).order('seq', { ascending: true }),
+        supabase.from('completion_votes').select('*', { count: 'exact', head: true }).eq('room_id', params.id),
+        supabase.from('completion_votes').select('user_id').eq('room_id', params.id).eq('user_id', user.id).maybeSingle(),
+        supabase.from('room_themes').select('user_id, theme_text').eq('room_id', params.id),
+        supabase
+          .from('session_theme_scores')
+          .select('score')
+          .eq('session_id', session.id)
+          .eq('user_id', user.id)
+          .maybeSingle(),
+      ])
 
     return (
       <>
@@ -157,6 +173,8 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
             char_limit: room.char_limit,
             timer_seconds: room.timer_seconds ?? 60,
             turn_order_mode: room.turn_order_mode ?? 'fixed',
+            game_mode: room.game_mode ?? 'open',
+            max_turns: room.max_turns ?? 48,
           }}
           session={session}
           members={membersWithProfile}
@@ -165,6 +183,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
           initialVoteCount={voteCount ?? 0}
           myVoted={!!myVoteData}
           initialThemes={themesData ?? []}
+          initialMyThemeScore={typeof myScoreRow?.score === 'number' ? myScoreRow.score : null}
         />
       </>
     )

@@ -75,15 +75,39 @@
 
 ## 5. 実装フェーズ案（Claude Code 向けワーク順）
 
-1. **調査:** 「自動更新がない」の再現箇所を特定（画面一覧と現状の購読有無）。
-2. **ホスト時間設定:** `createRoomSchema` と UI の緩和、DB `check` 制約があれば合わせて修正。
-3. **テーマ入力（人数分）:** 待機〜開始前フローにフォーム追加、RLS 確認。
-4. **ターン順ランダム:** `submitSentence` / `skipTurn` 後の `current_turn` 更新ロジックの分岐。
-5. **AI 判定:** API ルートまたは Server Action、プロンプト、キャッシュ、**1 セッションあたり呼び出し上限**。
-6. **音声入力:** `WritingRoom` の textarea 周りにトグルボタン。
-7. **小説モード:** `char_limit` 上限引き上げ、表示を段落寄せ、別ラベル文言。
+> **2026-04-12 実装済み（`feature/backlog-meeting-2026-04-12`）**
 
-各フェーズで **Vitest を既存パターンに合わせて追加**（`src/lib/**/__tests__/`）。
+| # | 内容 | 状態 | コミット概要 |
+|---|------|------|------------|
+| 1 | 調査：自動更新がない箇所を特定 | ✅ 完了 | `/library` と WritingRoom 外の画面が対象 |
+| 2 | ホスト時間設定 (U2) | ✅ 完了 | `timer_seconds` 10〜600秒、プリセットボタン + 数値入力 UI |
+| 3 | テーマ入力 C2/C3 | ✅ 完了 | `room_themes` テーブル、WaitingRoom フォーム、WritingRoom 表示 |
+| 4 | ターン順ランダム C5 | ✅ 完了 | `turn_order_mode` カラム、session.id シードのクライアントシャッフル |
+| 5 | AI 判定 C4/E2/E3 | ⬜ 未着手 | 次フェーズ（AI コスト・プロンプト設計が必要） |
+| 6 | 音声入力 U3 | ✅ 完了 | Web Speech API、ja-JP、マイク権限エラー表示 |
+| 7 | 自動更新修正 U1 | ✅ 完了 | `revalidatePath('/library')` + LibraryList Realtime |
+| 8 | 小説モード C1 | ⬜ 未着手 | char_limit 上限は 200 まで拡張済み。段落表示・モード切替は次フェーズ |
+
+**DB マイグレーション適用済み:**
+- `007_timer_range_and_turn_order.sql` — `timer_seconds` 制約緩和 + `turn_order_mode`
+- `008_room_themes.sql` — `room_themes` テーブル新設
+
+---
+
+### 残タスク（次フェーズ）
+
+**AI 判定（C4/E2/E3）の実装方針（未着手）:**
+- Server Action または `/api/ai-score` ルートで Claude API を呼び出す
+- 入力: 直近 K 文 + 全プレイヤーのテーマ → テーマ適合度スコア（0〜100%）
+- トリガー: `submitSentence` 後にバックグラウンド実行（`waitUntil` または Edge Function）
+- 結果保存: `ai_session_metrics` テーブル（1 セッションあたり最大呼び出し回数の上限設定必須）
+- UI: WritingRoom にスコアメーター表示
+- セキュリティ: `ANTHROPIC_API_KEY` は Secret Manager で管理、レスポンスをキャッシュ
+
+**小説モード（C1）の実装方針（未着手）:**
+- `rooms.mode`（`relay` | `novel`）カラム追加（マイグレーション）
+- `novel` モード時: WritingRoom の NovelViewer を段落寄せに変更、char_limit デフォルト 150
+- CreateRoomForm にモード選択 UI 追加
 
 ---
 

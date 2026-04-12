@@ -48,6 +48,8 @@ export function CreateRoomForm() {
   const [state, formAction] = useFormState(createRoom, null)
   const [timerSeconds, setTimerSeconds] = useState(60)
   const [turnOrderMode, setTurnOrderMode] = useState<'fixed' | 'random'>('fixed')
+  const [gameMode, setGameMode] = useState<'open' | 'secret_battle'>('open')
+  const [maxTurns, setMaxTurns] = useState(48)
 
   return (
     <form action={formAction} className="space-y-5">
@@ -116,6 +118,56 @@ export function CreateRoomForm() {
           <option value="150">150文字（段落）</option>
           <option value="200">200文字（長文）</option>
         </select>
+      </div>
+
+      {/* ゲームモード */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">ゲームモード</label>
+        <input type="hidden" name="game_mode" value={gameMode} />
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="_game_mode_ui"
+              checked={gameMode === 'open'}
+              onChange={() => setGameMode('open')}
+              className="accent-indigo-600 mt-1"
+            />
+            <span>
+              <span className="text-sm font-medium text-gray-800">オープン</span>
+              <span className="block text-xs text-gray-500">全員のテーマが見える。開始前に各自がテーマを入力。</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="_game_mode_ui"
+              checked={gameMode === 'secret_battle'}
+              onChange={() => setGameMode('secret_battle')}
+              className="accent-indigo-600 mt-1"
+            />
+            <span>
+              <span className="text-sm font-medium text-gray-800">秘密テーマ対戦</span>
+              <span className="block text-xs text-gray-500">
+                開始時にAIが参加者ごとに異なるテーマを配布（自分のテーマのみ表示）。サーバに SUPABASE_SERVICE_ROLE_KEY が必要です。
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">最大ターン数（強制終了の目安）</label>
+        <input
+          type="number"
+          name="max_turns"
+          value={maxTurns}
+          min={5}
+          max={200}
+          onChange={(e) => setMaxTurns(Number(e.target.value))}
+          className="w-24 px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center"
+        />
+        <span className="text-sm text-gray-600 ml-2">（5〜200・この回数でターンが止まります）</span>
       </div>
 
       {/* ターン順モード */}

@@ -10,6 +10,8 @@ const createRoomSchema = z.object({
   char_limit: z.coerce.number().int().min(20).max(200),
   timer_seconds: z.coerce.number().int().min(10, 'タイマーは10秒以上で設定してください').max(600, 'タイマーは600秒以内で設定してください'),
   turn_order_mode: z.enum(['fixed', 'random']).default('fixed'),
+  game_mode: z.enum(['open', 'secret_battle']).default('open'),
+  max_turns: z.coerce.number().int().min(5).max(200).default(48),
 })
 
 const MEMBER_COLORS = [
@@ -37,13 +39,15 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
     char_limit: formData.get('char_limit'),
     timer_seconds: formData.get('timer_seconds'),
     turn_order_mode: formData.get('turn_order_mode'),
+    game_mode: formData.get('game_mode'),
+    max_turns: formData.get('max_turns'),
   })
 
   if (!result.success) {
     return { error: result.error.issues[0].message }
   }
 
-  const { genre, max_players, char_limit, timer_seconds, turn_order_mode } = result.data
+  const { genre, max_players, char_limit, timer_seconds, turn_order_mode, game_mode, max_turns } = result.data
 
   // コード衝突時は最大3回リトライ
   let room = null
@@ -51,7 +55,17 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
     const join_code = generateJoinCode()
     const { data, error } = await supabase
       .from('rooms')
-      .insert({ genre, max_players, char_limit, timer_seconds, turn_order_mode, created_by: user.id, join_code })
+      .insert({
+        genre,
+        max_players,
+        char_limit,
+        timer_seconds,
+        turn_order_mode,
+        game_mode,
+        max_turns,
+        created_by: user.id,
+        join_code,
+      })
       .select('id')
       .single()
 
@@ -131,6 +145,16 @@ export async function setTheme(_prev: ThemeState, formData: FormData): Promise<T
 
   const roomId = formData.get('room_id') as string
   if (!roomId) return { error: 'ルームIDが不正です' }
+
+  const { data: roomRow } = await supabase
+    .from('rooms')
+    .select('game_mode')
+    .eq('id', roomId)
+    .maybeSingle()
+
+  if (roomRow?.game_mode === 'secret_battle') {
+    return { error: '秘密対戦ルームではテーマは開始時に自動配布されます' }
+  }
 
   const result = themeSchema.safeParse({ theme_text: formData.get('theme_text') })
   if (!result.success) return { error: result.error.issues[0].message }

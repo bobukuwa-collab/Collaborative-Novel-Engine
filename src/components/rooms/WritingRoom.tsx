@@ -53,6 +53,10 @@ type Session = {
   room_id: string
   current_turn: number
   timer_end: string
+  max_turns?: number
+  coherence_score?: number | null
+  end_proposed?: boolean
+  last_scored_turn?: number
 }
 
 type Sentence = {
@@ -82,6 +86,8 @@ type Room = {
   char_limit: number
   timer_seconds: number
   turn_order_mode: string
+  game_mode: string
+  max_turns: number
 }
 
 type Props = {
@@ -93,6 +99,7 @@ type Props = {
   initialVoteCount: number
   myVoted: boolean
   initialThemes: Theme[]
+  initialMyThemeScore: number | null
 }
 
 /**
@@ -124,11 +131,13 @@ export function WritingRoom({
   initialVoteCount,
   myVoted: initialMyVoted,
   initialThemes,
+  initialMyThemeScore,
 }: Props) {
   const router = useRouter()
   const [session, setSession] = useState(initialSession)
   const [sentences, setSentences] = useState(initialSentences)
   const [themes, setThemes] = useState<Theme[]>(initialThemes)
+  const [myThemeScore, setMyThemeScore] = useState<number | null>(initialMyThemeScore)
   const [content, setContent] = useState('')
   const [timeLeft, setTimeLeft] = useState(room.timer_seconds)
   const [error, setError] = useState<string | null>(null)
@@ -187,9 +196,17 @@ export function WritingRoom({
     : sortedMembers
   const memberCount = orderedMembers.length
   const threshold = memberCount === 2 ? 2 : Math.floor(memberCount / 2) + 1
+  const maxTurnCap = session.max_turns ?? room.max_turns
+  const turnLocked = session.current_turn >= maxTurnCap
   const currentMemberIndex = session.current_turn % memberCount
   const currentMember = orderedMembers[currentMemberIndex]
   const isMyTurn = currentMember?.user_id === currentUserId
+  const isSecret = room.game_mode === 'secret_battle'
+  const myThemeRow = themes.find((t) => t.user_id === currentUserId)
+  const currentWritersTheme = themes.find((t) => t.user_id === currentMember?.user_id)
+  const themeLineForIndicator = isSecret
+    ? (isMyTurn ? myThemeRow?.theme_text : undefined)
+    : currentWritersTheme?.theme_text
 
   // ターン切り替え時に音声認識を停止
   useEffect(() => {
@@ -272,10 +289,19 @@ export function WritingRoom({
             : [...prev, updated]
         })
       })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'session_theme_scores',
+        filter: `session_id=eq.${initialSession.id}`,
+      }, (payload) => {
+        const row = payload.new as { user_id?: string; score?: number }
+        if (row.user_id === currentUserId && typeof row.score === 'number') {
+          setMyThemeScore(row.score)
+        }
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [room.id, initialSession.id, router])
+  }, [room.id, initialSession.id, router, currentUserId])
 
   const handleVote = () => {
     setVoteError(null)
@@ -303,9 +329,6 @@ export function WritingRoom({
     })
   }
 
-  // 現在のターンプレイヤーのテーマ
-  const currentTheme = themes.find((t) => t.user_id === currentMember?.user_id)
-
   return (
     <main className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-2xl mx-auto space-y-4">
@@ -315,9 +338,30 @@ export function WritingRoom({
           <div>
             <p className="text-xs text-gray-500">カテゴリ</p>
             <h1 className="font-bold text-gray-800">{room.genre}</h1>
+            <p className="text-xs text-gray-400 mt-0.5">
+              ターン {session.current_turn + 1} / 上限 {maxTurnCap}
+              {isSecret ? ' · 秘密テーマ対戦' : ''}
+            </p>
           </div>
           <TimerDisplay timeLeft={timeLeft} total={room.timer_seconds} />
         </div>
+
+        {session.end_proposed && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-xl p-3">
+            早期終了が提案されています（スコア・完成度またはターン上限）。全員で完結に投票できます。
+          </div>
+        )}
+
+        {(typeof session.coherence_score === 'number' || myThemeScore !== null) && (
+          <div className="bg-white rounded-xl shadow p-3 text-xs text-gray-600 space-y-1">
+            {typeof session.coherence_score === 'number' && (
+              <p>物語のつながり（参考）: <span className="font-semibold text-gray-800">{session.coherence_score}</span> / 100</p>
+            )}
+            {myThemeScore !== null && (
+              <p>あなたのテーマへの寄与（参考）: <span className="font-semibold text-indigo-700">{myThemeScore}</span> / 100</p>
+            )}
+          </div>
+        )}
 
         {/* ターン表示 + テーマ */}
         <TurnIndicator
@@ -327,11 +371,19 @@ export function WritingRoom({
           roundNumber={roundNumber}
           turnInRound={turnInRound}
           memberCount={memberCount}
-          currentTheme={currentTheme?.theme_text}
+          currentTheme={themeLineForIndicator}
+          isSecret={isSecret}
         />
 
-        {/* テーマ一覧（設定済みの場合のみ表示） */}
-        {themes.length > 0 && (
+        {isSecret && myThemeRow && (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-sm">
+            <p className="text-xs text-indigo-600 font-semibold mb-1">あなただけの秘密テーマ</p>
+            <p className="text-gray-900 font-medium">「{myThemeRow.theme_text}」</p>
+          </div>
+        )}
+
+        {/* テーマ一覧（オープンで設定済みの場合） */}
+        {!isSecret && themes.length > 0 && (
           <ThemePanel themes={themes} members={orderedMembers} currentUserId={currentUserId} />
         )}
 
@@ -373,7 +425,11 @@ export function WritingRoom({
         <NovelViewer sentences={sentences} members={sortedMembers} />
 
         {/* 入力欄 */}
-        {isMyTurn ? (
+        {turnLocked ? (
+          <div className="bg-gray-100 rounded-xl shadow p-4 text-center text-sm text-gray-600">
+            最大ターンに達しました。完結に投票して作品をまとめてください。
+          </div>
+        ) : isMyTurn ? (
           <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-4 space-y-3">
             <div className="flex justify-between text-xs text-gray-500">
               <span className="text-indigo-600 font-medium">あなたのターンです！</span>

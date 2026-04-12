@@ -26,6 +26,7 @@ type Room = {
   char_limit: number
   timer_seconds: number
   turn_order_mode: string
+  game_mode: string
   status: string
   join_code: string
   room_members: Member[]
@@ -36,6 +37,7 @@ type Props = {
   currentUserId: string
   inviteUrl: string
   initialThemes: Theme[]
+  startError?: string
 }
 
 function ThemeSubmitButton() {
@@ -51,7 +53,7 @@ function ThemeSubmitButton() {
   )
 }
 
-export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes }: Props) {
+export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes, startError }: Props) {
   const router = useRouter()
   const [copied, setCopied] = useState(false)
   const [themes, setThemes] = useState<Theme[]>(initialThemes)
@@ -65,6 +67,7 @@ export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes }: P
   const sortedMembers = [...room.room_members].sort((a, b) => a.join_order - b.join_order)
   const canStart = isHost && room.room_members.length >= 2
   const myTheme = themes.find((t) => t.user_id === currentUserId)
+  const isSecret = room.game_mode === 'secret_battle'
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(inviteUrl)
@@ -159,56 +162,68 @@ export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes }: P
               </p>
             </div>
           </div>
+          {isSecret && (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-2 py-1.5 mt-3">
+              秘密テーマ対戦：執筆開始時にAIが参加者それぞれに異なるテーマを配ります（他者のテーマは見えません）。
+            </p>
+          )}
         </div>
 
-        {/* テーマ設定 */}
-        <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-700 mb-1">あなたのテーマを設定</h2>
-            <p className="text-xs text-gray-400">自分のテーマへ文章を引き込むのが勝負の軸です。任意ですが設定することを推奨します。</p>
+        {startError && (
+          <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-xl p-4">
+            {startError}
           </div>
-          <form action={themeAction} className="flex gap-2">
-            <input type="hidden" name="room_id" value={room.id} />
-            <input
-              type="text"
-              name="theme_text"
-              defaultValue={myTheme?.theme_text ?? ''}
-              placeholder="例：孤独な旅人が故郷を思う"
-              maxLength={50}
-              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <ThemeSubmitButton />
-          </form>
-          {themeState?.error && (
-            <p className="text-xs text-red-500">{themeState.error}</p>
-          )}
+        )}
 
-          {/* 全員のテーマ一覧 */}
-          {themes.length > 0 && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
-              <p className="text-xs text-gray-500 font-medium">設定済みテーマ</p>
-              {sortedMembers.map((member) => {
-                const theme = themes.find((t) => t.user_id === member.user_id)
-                return (
-                  <div key={member.user_id} className="flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: member.color }}
-                    />
-                    <span className="text-xs text-gray-500 w-20 truncate">
-                      {member.users?.display_name ?? '不明'}
-                    </span>
-                    {theme ? (
-                      <span className="text-sm text-gray-800 font-medium">「{theme.theme_text}」</span>
-                    ) : (
-                      <span className="text-xs text-gray-300 italic">未設定</span>
-                    )}
-                  </div>
-                )
-              })}
+        {/* テーマ設定（オープンのみ） */}
+        {!isSecret && (
+          <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700 mb-1">あなたのテーマを設定</h2>
+              <p className="text-xs text-gray-400">自分のテーマへ文章を引き込むのが勝負の軸です。任意ですが設定することを推奨します。</p>
             </div>
-          )}
-        </div>
+            <form action={themeAction} className="flex gap-2">
+              <input type="hidden" name="room_id" value={room.id} />
+              <input
+                type="text"
+                name="theme_text"
+                defaultValue={myTheme?.theme_text ?? ''}
+                placeholder="例：孤独な旅人が故郷を思う"
+                maxLength={50}
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <ThemeSubmitButton />
+            </form>
+            {themeState?.error && (
+              <p className="text-xs text-red-500">{themeState.error}</p>
+            )}
+
+            {themes.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-gray-100">
+                <p className="text-xs text-gray-500 font-medium">設定済みテーマ</p>
+                {sortedMembers.map((member) => {
+                  const theme = themes.find((t) => t.user_id === member.user_id)
+                  return (
+                    <div key={member.user_id} className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: member.color }}
+                      />
+                      <span className="text-xs text-gray-500 w-20 truncate">
+                        {member.users?.display_name ?? '不明'}
+                      </span>
+                      {theme ? (
+                        <span className="text-sm text-gray-800 font-medium">「{theme.theme_text}」</span>
+                      ) : (
+                        <span className="text-xs text-gray-300 italic">未設定</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 招待 */}
         <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
@@ -266,7 +281,7 @@ export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes }: P
                 {member.join_order === 0 && (
                   <span className="text-xs text-indigo-500 ml-auto">ホスト</span>
                 )}
-                {themes.some((t) => t.user_id === member.user_id) && (
+                {!isSecret && themes.some((t) => t.user_id === member.user_id) && (
                   <span className="text-xs text-green-500 ml-auto">テーマ設定済み ✓</span>
                 )}
               </li>

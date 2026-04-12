@@ -1,6 +1,9 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { assignThemesForMembers } from '@/lib/ai/assign-themes'
+import { scoreSessionText, shouldScoreTurn } from '@/lib/ai/score-session'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
@@ -24,7 +27,6 @@ export async function startSession(roomId: string, _formData: FormData): Promise
 
   if (!member || member.join_order !== 0) return
 
-  // 既にセッションが存在する場合はスキップ（二重送信防止）
   const { data: existingSession } = await supabase
     .from('sessions')
     .select('id')
@@ -34,18 +36,59 @@ export async function startSession(roomId: string, _formData: FormData): Promise
 
   if (existingSession) return
 
-  // ルームのタイマー設定を取得
   const { data: room } = await supabase
     .from('rooms')
-    .select('timer_seconds')
+    .select('timer_seconds, game_mode, max_turns, genre')
     .eq('id', roomId)
     .single()
 
-  const timerSeconds = room?.timer_seconds ?? 60
+  if (!room) return
+
+  const timerSeconds = room.timer_seconds ?? 60
+  const maxTurns = room.max_turns ?? 48
+  const gameMode = room.game_mode ?? 'open'
+
+  if (gameMode === 'secret_battle') {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      redirect(`/rooms/${roomId}?startError=${encodeURIComponent('秘密対戦にはサーバに SUPABASE_SERVICE_ROLE_KEY を設定してください')}`)
+    }
+    try {
+      const admin = createAdminClient()
+      const { data: mems, error: memErr } = await admin
+        .from('room_members')
+        .select('user_id')
+        .eq('room_id', roomId)
+        .order('join_order', { ascending: true })
+      if (memErr || !mems?.length) {
+        redirect(`/rooms/${roomId}?startError=${encodeURIComponent('参加者情報の取得に失敗しました')}`)
+      }
+      const userIds = mems.map((m) => m.user_id)
+      const assigned = await assignThemesForMembers(room.genre ?? 'ランダム', userIds)
+      for (const row of assigned) {
+        const { error: upErr } = await admin
+          .from('room_themes')
+          .upsert(
+            { room_id: roomId, user_id: row.user_id, theme_text: row.theme_text },
+            { onConflict: 'room_id,user_id' },
+          )
+        if (upErr) {
+          redirect(`/rooms/${roomId}?startError=${encodeURIComponent(`テーマ配布に失敗: ${upErr.message}`)}`)
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'テーマ配布エラー'
+      redirect(`/rooms/${roomId}?startError=${encodeURIComponent(msg)}`)
+    }
+  }
 
   const { error: sessionError } = await supabase
     .from('sessions')
-    .insert({ room_id: roomId, current_turn: 0, timer_end: nextTimerEnd(timerSeconds) })
+    .insert({
+      room_id: roomId,
+      current_turn: 0,
+      timer_end: nextTimerEnd(timerSeconds),
+      max_turns: maxTurns,
+    })
 
   if (sessionError) return
 
@@ -60,6 +103,76 @@ export async function startSession(roomId: string, _formData: FormData): Promise
 const submitSchema = z.object({
   content: z.string().min(1, '1文字以上入力してください'),
 })
+
+async function maybeScoreAndProposeEnd(
+  supabase: ReturnType<typeof createClient>,
+  sessionId: string,
+  roomId: string,
+  newTurn: number,
+  lastScoredTurn: number,
+  prevEndProposed: boolean,
+  maxTurns: number,
+) {
+  let nextLastScored = lastScoredTurn
+  let coherence: number | null = null
+  const scores: Record<string, number> = {}
+
+  if (shouldScoreTurn(newTurn, lastScoredTurn)) {
+    let themes: { user_id: string; theme_text: string }[] = []
+    try {
+      const admin = createAdminClient()
+      const { data: th } = await admin
+        .from('room_themes')
+        .select('user_id, theme_text')
+        .eq('room_id', roomId)
+      themes = th ?? []
+    } catch {
+      const { data: th } = await supabase
+        .from('room_themes')
+        .select('user_id, theme_text')
+        .eq('room_id', roomId)
+      themes = th ?? []
+    }
+
+    const { data: sents } = await supabase
+      .from('sentences')
+      .select('content')
+      .eq('session_id', sessionId)
+      .order('seq', { ascending: true })
+
+    const storyText = (sents ?? []).map((s) => s.content).join('\n')
+    const result = await scoreSessionText({ storyText, themes })
+    Object.assign(scores, result.scores)
+    coherence = result.coherence
+    nextLastScored = newTurn
+  }
+
+  const strongEnough = coherence !== null && coherence >= 68
+  const dominant =
+    Object.keys(scores).length > 0 &&
+    Object.values(scores).some((v) => v >= 72)
+  const endProposed =
+    prevEndProposed || newTurn >= maxTurns || strongEnough || dominant
+
+  const patch: Record<string, unknown> = { end_proposed: endProposed }
+  if (nextLastScored !== lastScoredTurn) {
+    patch.coherence_score = coherence
+    patch.last_scored_turn = nextLastScored
+    try {
+      const admin = createAdminClient()
+      for (const [uid, val] of Object.entries(scores)) {
+        await admin.from('session_theme_scores').upsert(
+          { session_id: sessionId, user_id: uid, score: val },
+          { onConflict: 'session_id,user_id' },
+        )
+      }
+    } catch {
+      /* スコア行の保存のみスキップ（SERVICE_ROLE 未設定時など） */
+    }
+  }
+
+  await supabase.from('sessions').update(patch).eq('id', sessionId)
+}
 
 export async function submitSentence(
   sessionId: string,
@@ -77,6 +190,22 @@ export async function submitSentence(
 
   if (content.length > charLimit) {
     return { error: `${charLimit}文字以内で入力してください` }
+  }
+
+  const { data: sessRow, error: sessErr } = await supabase
+    .from('sessions')
+    .select('current_turn, max_turns, room_id, last_scored_turn, end_proposed')
+    .eq('id', sessionId)
+    .single()
+
+  if (sessErr || !sessRow) {
+    return { error: 'セッションが見つかりません' }
+  }
+  if (sessRow.current_turn !== currentTurn) {
+    return { error: 'ターンが更新されました。画面を更新してください。' }
+  }
+  if (sessRow.current_turn >= sessRow.max_turns) {
+    return { error: '最大ターンに達しています。完結に投票してください。' }
   }
 
   const { count } = await supabase
@@ -104,6 +233,17 @@ export async function submitSentence(
     return { error: `ターン更新に失敗しました: ${sessionError.message}` }
   }
 
+  const newTurn = currentTurn + 1
+  await maybeScoreAndProposeEnd(
+    supabase,
+    sessionId,
+    sessRow.room_id,
+    newTurn,
+    sessRow.last_scored_turn ?? -1,
+    sessRow.end_proposed ?? false,
+    sessRow.max_turns,
+  )
+
   return { success: true }
 }
 
@@ -112,11 +252,42 @@ export async function skipTurn(sessionId: string, currentTurn: number, timerSeco
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '認証が必要です' }
 
-  await supabase
+  const { data: sessRow, error: sessErr } = await supabase
+    .from('sessions')
+    .select('current_turn, max_turns, room_id, last_scored_turn, end_proposed')
+    .eq('id', sessionId)
+    .single()
+
+  if (sessErr || !sessRow) {
+    return { error: 'セッションが見つかりません' }
+  }
+  if (sessRow.current_turn !== currentTurn) {
+    return { error: 'ターンが更新されました。画面を更新してください。' }
+  }
+  if (sessRow.current_turn >= sessRow.max_turns) {
+    return { error: '最大ターンに達しています。完結に投票してください。' }
+  }
+
+  const { error: upErr } = await supabase
     .from('sessions')
     .update({ current_turn: currentTurn + 1, timer_end: nextTimerEnd(timerSeconds) })
     .eq('id', sessionId)
     .eq('current_turn', currentTurn)
+
+  if (upErr) {
+    return { error: `ターン更新に失敗しました: ${upErr.message}` }
+  }
+
+  const newTurn = currentTurn + 1
+  await maybeScoreAndProposeEnd(
+    supabase,
+    sessionId,
+    sessRow.room_id,
+    newTurn,
+    sessRow.last_scored_turn ?? -1,
+    sessRow.end_proposed ?? false,
+    sessRow.max_turns,
+  )
 
   return { success: true }
 }
@@ -153,7 +324,6 @@ async function completeNovel(roomId: string) {
     .update({ status: 'completed' })
     .eq('id', roomId)
 
-  // ライブラリ一覧と作品ページをキャッシュ破棄して即時更新
   revalidatePath('/library')
   revalidatePath(`/novels/${novel.id}`)
 
@@ -165,7 +335,6 @@ export async function voteToEnd(roomId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: '認証が必要です' }
 
-  // 既に投票済みか確認
   const { data: existing } = await supabase
     .from('completion_votes')
     .select('user_id')
@@ -175,14 +344,12 @@ export async function voteToEnd(roomId: string) {
 
   if (existing) return { error: 'すでに投票済みです' }
 
-  // 投票を追加
   const { error: voteError } = await supabase
     .from('completion_votes')
     .insert({ room_id: roomId, user_id: user.id })
 
   if (voteError) return { error: `投票に失敗しました: ${voteError.message}` }
 
-  // 投票数と参加人数を取得
   const [{ count: voteCount }, { count: memberCount }] = await Promise.all([
     supabase
       .from('completion_votes')
@@ -197,7 +364,6 @@ export async function voteToEnd(roomId: string) {
   const votes = voteCount ?? 0
   const members = memberCount ?? 1
 
-  // 過半数チェック（2人の場合は全員、3人以上は過半数）
   const threshold = members === 2 ? 2 : Math.floor(members / 2) + 1
   if (votes >= threshold) {
     const result = await completeNovel(roomId)
