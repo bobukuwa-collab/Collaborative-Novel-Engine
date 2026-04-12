@@ -8,6 +8,8 @@ const createRoomSchema = z.object({
   char_limit: z.coerce.number().int().min(20).max(200),
   timer_seconds: z.coerce.number().int().min(10, 'タイマーは10秒以上で設定してください').max(600, 'タイマーは600秒以内で設定してください'),
   turn_order_mode: z.enum(['fixed', 'random']).default('fixed'),
+  game_mode: z.enum(['open', 'secret_battle']).default('open'),
+  max_turns: z.coerce.number().int().min(5).max(200).default(48),
 })
 
 const VALID_BASE = {
@@ -16,6 +18,8 @@ const VALID_BASE = {
   char_limit: '100',
   timer_seconds: '60',
   turn_order_mode: 'fixed',
+  game_mode: 'open',
+  max_turns: '48',
 }
 
 const MEMBER_COLORS = [
@@ -38,7 +42,27 @@ describe('createRoomSchema', () => {
       expect(result.data.char_limit).toBe(100)
       expect(result.data.timer_seconds).toBe(60)
       expect(result.data.turn_order_mode).toBe('fixed')
+      expect(result.data.game_mode).toBe('open')
+      expect(result.data.max_turns).toBe(48)
     }
+  })
+
+  it('secret_battle と max_turns を受け付ける', () => {
+    const result = createRoomSchema.safeParse({
+      ...VALID_BASE,
+      game_mode: 'secret_battle',
+      max_turns: '120',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.game_mode).toBe('secret_battle')
+      expect(result.data.max_turns).toBe(120)
+    }
+  })
+
+  it('max_turns が4の場合はエラー', () => {
+    const result = createRoomSchema.safeParse({ ...VALID_BASE, max_turns: '4' })
+    expect(result.success).toBe(false)
   })
 
   it('ジャンルが空の場合はエラー', () => {
@@ -137,7 +161,8 @@ describe('createRoomSchema', () => {
   })
 
   it('turn_order_mode が未指定の場合は fixed にデフォルト', () => {
-    const { turn_order_mode: _, ...withoutMode } = VALID_BASE
+    const withoutMode = { ...VALID_BASE }
+    delete (withoutMode as { turn_order_mode?: string }).turn_order_mode
     const result = createRoomSchema.safeParse(withoutMode)
     expect(result.success).toBe(true)
     if (result.success) {

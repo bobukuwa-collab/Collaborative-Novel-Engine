@@ -9,11 +9,64 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: () => mockSupabase,
 }))
 
+vi.mock('@/lib/supabase/admin', () => ({
+  createAdminClient: () => ({
+    from: (table: string) => {
+      if (table === 'room_themes') {
+        return {
+          select: () => ({
+            eq: () => ({ data: [] as { user_id: string; theme_text: string }[] }),
+          }),
+        }
+      }
+      if (table === 'session_theme_scores') {
+        return {
+          upsert: async () => ({ error: null }),
+        }
+      }
+      return { select: () => ({ eq: () => ({ data: [] }) }) }
+    },
+  }),
+}))
+
 vi.mock('next/navigation', () => ({
   redirect: vi.fn(),
 }))
 
 const { skipTurn, voteToEnd } = await import('@/lib/sessions/actions')
+
+function mockSessionsForSkip(currentTurn: number) {
+  const sessionData = {
+    current_turn: currentTurn,
+    max_turns: 100,
+    room_id: 'room-a',
+    last_scored_turn: -1,
+    end_proposed: false,
+  }
+  const single = vi.fn().mockResolvedValue({ data: sessionData })
+  const innerEq = vi.fn().mockResolvedValue({ error: null })
+
+  mockSupabase.from.mockImplementation((table: string) => {
+    if (table === 'sessions') {
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({ single }),
+        }),
+        update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: innerEq }) }),
+      }
+    }
+    if (table === 'sentences') {
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            order: vi.fn().mockResolvedValue({ data: [] as { content: string }[] }),
+          }),
+        }),
+      }
+    }
+    return {}
+  })
+}
 
 describe('skipTurn', () => {
   beforeEach(() => { vi.clearAllMocks() })
@@ -26,58 +79,78 @@ describe('skipTurn', () => {
 
   it('認証済みの場合はsuccess: trueを返す', async () => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
-    // 1回目: sessions.select（セッション取得）
-    // 2回目: sessions.update（ターン更新）
-    mockSupabase.from
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({
-          data: { current_turn: 2, max_turns: 48, room_id: 'room-1', last_scored_turn: -1, end_proposed: false },
-          error: null,
-        }),
-      })
-      .mockReturnValueOnce({
-        update: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
-      })
-      // AI スコアリングで追加の from() 呼び出しが来る場合の fallback
-      .mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: null, error: null }),
-        order: vi.fn().mockReturnThis(),
-        update: vi.fn().mockReturnThis(),
-      })
+    mockSessionsForSkip(2)
     const result = await skipTurn('session-1', 2, 60)
     expect(result).toEqual({ success: true })
   })
 
   it('current_turn + 1 でDBを更新する', async () => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
+    mockSessionsForSkip(3)
     const mockUpdate = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
     })
-    mockSupabase.from
-      .mockReturnValueOnce({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({
-          data: { current_turn: 3, max_turns: 48, room_id: 'room-1', last_scored_turn: -1, end_proposed: false },
-          error: null,
-        }),
-      })
-      .mockReturnValueOnce({ update: mockUpdate })
-      .mockReturnValue({
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockResolvedValue({ data: null, error: null }),
-        order: vi.fn().mockReturnThis(),
-        update: vi.fn().mockReturnThis(),
-      })
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'sessions') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: {
+                  current_turn: 3,
+                  max_turns: 100,
+                  room_id: 'room-a',
+                  last_scored_turn: -1,
+                  end_proposed: false,
+                },
+              }),
+            }),
+          }),
+          update: mockUpdate,
+        }
+      }
+      if (table === 'sentences') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: [] }),
+            }),
+          }),
+        }
+      }
+      return {}
+    })
 
     await skipTurn('session-1', 3, 60)
     expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ current_turn: 4 }))
+  })
+
+  it('最大ターン到達後はエラー', async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'sessions') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: {
+                  current_turn: 50,
+                  max_turns: 50,
+                  room_id: 'room-a',
+                  last_scored_turn: -1,
+                  end_proposed: false,
+                },
+              }),
+            }),
+          }),
+        }
+      }
+      return {}
+    })
+    const result = await skipTurn('session-1', 50, 60)
+    expect(result?.error).toMatch(/最大ターン/)
   })
 })
 

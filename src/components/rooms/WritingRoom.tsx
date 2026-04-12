@@ -238,7 +238,7 @@ export function WritingRoom({
 
   // タイムアウト時の自動送信 or スキップ
   useEffect(() => {
-    if (timeLeft === 0 && isMyTurn && !skipCalledRef.current) {
+    if (timeLeft === 0 && isMyTurn && !skipCalledRef.current && !turnLocked) {
       skipCalledRef.current = true
       const currentContent = contentRef.current.trim().slice(0, room.char_limit)
       startTransition(async () => {
@@ -253,7 +253,7 @@ export function WritingRoom({
         }
       })
     }
-  }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds, room.char_limit])
+  }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds, room.char_limit, turnLocked])
 
   // Realtime 購読
   useEffect(() => {
@@ -517,6 +517,7 @@ function TurnIndicator({
   turnInRound,
   memberCount,
   currentTheme,
+  isSecret,
 }: {
   currentMember: Member | undefined
   isMyTurn: boolean
@@ -525,6 +526,7 @@ function TurnIndicator({
   turnInRound: number
   memberCount: number
   currentTheme: string | undefined
+  isSecret: boolean
 }) {
   return (
     <div className={`rounded-xl shadow p-3 space-y-1 ${isMyTurn ? 'bg-indigo-50 border border-indigo-200' : 'bg-white'}`}>
@@ -541,6 +543,9 @@ function TurnIndicator({
         <p className="text-xs text-gray-500 pl-7">
           テーマ：<span className="font-medium text-gray-700">「{currentTheme}」</span>
         </p>
+      )}
+      {isSecret && !isMyTurn && (
+        <p className="text-xs text-gray-400 pl-7">相手のテーマは非公開です。</p>
       )}
     </div>
   )

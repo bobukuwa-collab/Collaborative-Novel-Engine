@@ -154,7 +154,8 @@ async function maybeScoreAndProposeEnd(
   const endProposed =
     prevEndProposed || newTurn >= maxTurns || strongEnough || dominant
 
-  const patch: Record<string, unknown> = { end_proposed: endProposed }
+  const patch: Record<string, unknown> = {}
+  if (endProposed) patch.end_proposed = true
   if (nextLastScored !== lastScoredTurn) {
     patch.coherence_score = coherence
     patch.last_scored_turn = nextLastScored
@@ -171,7 +172,9 @@ async function maybeScoreAndProposeEnd(
     }
   }
 
-  await supabase.from('sessions').update(patch).eq('id', sessionId)
+  if (Object.keys(patch).length > 0) {
+    await supabase.from('sessions').update(patch).eq('id', sessionId)
+  }
 }
 
 export async function submitSentence(
