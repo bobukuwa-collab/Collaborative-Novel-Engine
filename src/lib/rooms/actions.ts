@@ -7,10 +7,13 @@ import { z } from 'zod'
 const createRoomSchema = z.object({
   genre: z.string().min(1, 'ジャンルを入力してください').max(20),
   max_players: z.coerce.number().int().min(2).max(8),
-  char_limit: z.coerce.number().int().min(20).max(200),
+  char_limit: z.preprocess(
+    (v) => (v === '' || v === 'null' || v === '0' ? null : v),
+    z.coerce.number().int().min(1).max(1000).nullable(),
+  ),
   timer_seconds: z.coerce.number().int().min(10, 'タイマーは10秒以上で設定してください').max(600, 'タイマーは600秒以内で設定してください'),
   turn_order_mode: z.enum(['fixed', 'random']).default('fixed'),
-  game_mode: z.enum(['open', 'secret_battle']).default('open'),
+  game_mode: z.enum(['open', 'secret_battle']).default('secret_battle'),
   max_turns: z.coerce.number().int().min(5).max(200).default(48),
 })
 

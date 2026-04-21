@@ -80,10 +80,12 @@ type Theme = {
   theme_text: string
 }
 
+const HIDDEN_MAX_CHARS = 1000
+
 type Room = {
   id: string
   genre: string
-  char_limit: number
+  char_limit: number | null
   timer_seconds: number
   turn_order_mode: string
   game_mode: string
@@ -150,6 +152,8 @@ export function WritingRoom({
   const contentRef = useRef(content)
   useEffect(() => { contentRef.current = content }, [content])
 
+  const effectiveCharLimit = effectiveCharLimit ?? HIDDEN_MAX_CHARS
+
   // 音声入力
   const [isListening, setIsListening] = useState(false)
   const [speechError, setSpeechError] = useState<string | null>(null)
@@ -174,7 +178,7 @@ export function WritingRoom({
 
     recognition.onresult = (e: SpeechRecognitionEvent) => {
       const transcript = e.results[e.resultIndex][0].transcript
-      setContent((prev) => (prev + transcript).slice(0, room.char_limit))
+      setContent((prev) => (prev + transcript).slice(0, effectiveCharLimit))
       setSpeechError(null)
     }
     recognition.onend = () => setIsListening(false)
@@ -187,7 +191,7 @@ export function WritingRoom({
     recognition.start()
     setIsListening(true)
     setSpeechError(null)
-  }, [isListening, stopListening, room.char_limit])
+  }, [isListening, stopListening, effectiveCharLimit])
 
   // ターン順を決定（random モードはセッションIDをシードにシャッフル）
   const sortedMembers = [...members].sort((a, b) => a.join_order - b.join_order)
@@ -240,12 +244,12 @@ export function WritingRoom({
   useEffect(() => {
     if (timeLeft === 0 && isMyTurn && !skipCalledRef.current && !turnLocked) {
       skipCalledRef.current = true
-      const currentContent = contentRef.current.trim().slice(0, room.char_limit)
+      const currentContent = contentRef.current.trim().slice(0, effectiveCharLimit)
       startTransition(async () => {
         if (currentContent) {
           const result = await submitSentence(
             session.id, currentContent, session.current_turn,
-            room.char_limit, room.timer_seconds,
+            effectiveCharLimit, room.timer_seconds,
           )
           if (!result?.error) setContent('')
         } else {
@@ -253,7 +257,7 @@ export function WritingRoom({
         }
       })
     }
-  }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds, room.char_limit, turnLocked])
+  }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds, effectiveCharLimit, turnLocked])
 
   // Realtime 購読
   useEffect(() => {
@@ -322,7 +326,7 @@ export function WritingRoom({
     startTransition(async () => {
       const result = await submitSentence(
         session.id, content.trim(), session.current_turn,
-        room.char_limit, room.timer_seconds,
+        effectiveCharLimit, room.timer_seconds,
       )
       if (result?.error) setError(result.error)
       else setContent('')
@@ -433,8 +437,8 @@ export function WritingRoom({
           <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-4 space-y-3">
             <div className="flex justify-between text-xs text-gray-500">
               <span className="text-indigo-600 font-medium">あなたのターンです！</span>
-              <span className={content.length > room.char_limit ? 'text-red-500' : ''}>
-                {content.length} / {room.char_limit}文字
+              <span className={content.length > effectiveCharLimit ? 'text-red-500' : ''}>
+                {content.length} / {room.char_limit === null ? '∞' : `${effectiveCharLimit}文字`}
               </span>
             </div>
             <div className="relative">
@@ -443,7 +447,7 @@ export function WritingRoom({
                 onChange={(e) => setContent(e.target.value)}
                 placeholder={isListening ? '🎤 聞き取り中...' : '言葉を紡いでください...'}
                 rows={3}
-                maxLength={room.char_limit}
+                maxLength={effectiveCharLimit}
                 disabled={isPending}
                 className={`w-full border rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 resize-none pr-10 ${
                   isListening
@@ -470,7 +474,7 @@ export function WritingRoom({
             {error && <p className="text-xs text-red-500">{error}</p>}
             <button
               type="submit"
-              disabled={isPending || !content.trim() || content.length > room.char_limit}
+              disabled={isPending || !content.trim() || content.length > effectiveCharLimit}
               className="w-full py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
             >
               {isPending ? '投稿中...' : '投稿する'}

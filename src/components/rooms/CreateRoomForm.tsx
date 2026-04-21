@@ -26,6 +26,14 @@ const TIMER_PRESETS = [
   { label: '3分', value: 180 },
 ]
 
+const CHAR_LIMIT_PRESETS = [
+  { label: '100文字', value: 100 },
+  { label: '200文字', value: 200 },
+  { label: '300文字（推奨）', value: 300 },
+  { label: '500文字', value: 500 },
+  { label: '∞', value: null },
+]
+
 const SELECT_CLASS = 'w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500'
 const PRESET_BASE = 'px-3 py-1.5 text-sm rounded-md border transition-colors'
 const PRESET_ACTIVE = 'bg-indigo-600 text-white border-indigo-600'
@@ -47,8 +55,9 @@ function SubmitButton() {
 export function CreateRoomForm() {
   const [state, formAction] = useFormState(createRoom, null)
   const [timerSeconds, setTimerSeconds] = useState(60)
+  const [charLimit, setCharLimit] = useState<number | null>(300)
   const [turnOrderMode, setTurnOrderMode] = useState<'fixed' | 'random'>('fixed')
-  const [gameMode, setGameMode] = useState<'open' | 'secret_battle'>('open')
+  const [gameMode, setGameMode] = useState<'open' | 'secret_battle'>('secret_battle')
   const [maxTurns, setMaxTurns] = useState(48)
 
   return (
@@ -106,18 +115,25 @@ export function CreateRoomForm() {
 
       {/* 文字数上限 */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          1フレーズあたりの文字数上限
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          1ターンあたりの文字数上限
         </label>
-        <select name="char_limit" defaultValue="40" className={SELECT_CLASS}>
-          <option value="20">20文字（一言）</option>
-          <option value="30">30文字（短句）</option>
-          <option value="40">40文字（フレーズ）</option>
-          <option value="60">60文字（詩的な一節）</option>
-          <option value="80">80文字（格言）</option>
-          <option value="150">150文字（段落）</option>
-          <option value="200">200文字（長文）</option>
-        </select>
+        <input type="hidden" name="char_limit" value={charLimit === null ? 'null' : charLimit} />
+        <div className="flex flex-wrap gap-2">
+          {CHAR_LIMIT_PRESETS.map((p) => (
+            <button
+              key={String(p.value)}
+              type="button"
+              onClick={() => setCharLimit(p.value)}
+              className={`${PRESET_BASE} ${charLimit === p.value ? PRESET_ACTIVE : PRESET_IDLE}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {charLimit === null && (
+          <p className="mt-1 text-xs text-gray-500">∞ を選択中：最大1000文字まで入力できます</p>
+        )}
       </div>
 
       {/* ゲームモード */}

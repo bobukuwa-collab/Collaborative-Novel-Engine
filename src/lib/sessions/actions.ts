@@ -177,11 +177,13 @@ async function maybeScoreAndProposeEnd(
   }
 }
 
+const HIDDEN_MAX_CHARS = 1000
+
 export async function submitSentence(
   sessionId: string,
   content: string,
   currentTurn: number,
-  charLimit: number,
+  charLimit: number | null,
   timerSeconds: number,
 ) {
   const supabase = createClient()
@@ -191,8 +193,9 @@ export async function submitSentence(
   const result = submitSchema.safeParse({ content })
   if (!result.success) return { error: result.error.issues[0].message }
 
-  if (content.length > charLimit) {
-    return { error: `${charLimit}文字以内で入力してください` }
+  const effectiveLimit = charLimit ?? HIDDEN_MAX_CHARS
+  if (content.length > effectiveLimit) {
+    return { error: `${effectiveLimit}文字以内で入力してください` }
   }
 
   const { data: sessRow, error: sessErr } = await supabase
