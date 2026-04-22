@@ -90,6 +90,7 @@ type Room = {
   turn_order_mode: string
   game_mode: string
   max_turns: number
+  mode: string
 }
 
 type Props = {
@@ -152,7 +153,7 @@ export function WritingRoom({
   const contentRef = useRef(content)
   useEffect(() => { contentRef.current = content }, [content])
 
-  const effectiveCharLimit = effectiveCharLimit ?? HIDDEN_MAX_CHARS
+  const effectiveCharLimit = room.char_limit ?? HIDDEN_MAX_CHARS
 
   // 音声入力
   const [isListening, setIsListening] = useState(false)
@@ -345,6 +346,7 @@ export function WritingRoom({
             <p className="text-xs text-gray-400 mt-0.5">
               ターン {session.current_turn + 1} / 上限 {maxTurnCap}
               {isSecret ? ' · 秘密テーマ対戦' : ''}
+              {room.mode === 'novel' ? ' · 小説バトル' : ''}
             </p>
           </div>
           <TimerDisplay timeLeft={timeLeft} total={room.timer_seconds} />
@@ -426,7 +428,7 @@ export function WritingRoom({
         </div>
 
         {/* 言葉（フレーズ一覧） */}
-        <NovelViewer sentences={sentences} members={sortedMembers} />
+        <NovelViewer sentences={sentences} members={sortedMembers} mode={room.mode} />
 
         {/* 入力欄 */}
         {turnLocked ? (
@@ -584,16 +586,35 @@ function ThemePanel({ themes, members, currentUserId }: {
   )
 }
 
-function NovelViewer({ sentences, members }: { sentences: Sentence[]; members: Member[] }) {
+function NovelViewer({ sentences, members, mode }: { sentences: Sentence[]; members: Member[]; mode: string }) {
   const memberMap = new Map(members.map((m) => [m.user_id, m]))
+  const sorted = [...sentences].sort((a, b) => a.seq - b.seq)
+  const isNovel = mode === 'novel'
+
   return (
-    <div className="bg-white rounded-xl shadow p-4 min-h-32 max-h-96 overflow-y-auto">
-      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">言葉</h2>
-      {sentences.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-4">まだフレーズがありません。最初の言葉を紡ぎましょう！</p>
+    <div className={`bg-white rounded-xl shadow p-4 overflow-y-auto ${isNovel ? 'min-h-48 max-h-[32rem]' : 'min-h-32 max-h-96'}`}>
+      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">
+        {isNovel ? '小説' : '言葉'}
+      </h2>
+      {sorted.length === 0 ? (
+        <p className="text-gray-400 text-sm text-center py-4">
+          {isNovel ? 'まだ投稿がありません。最初の段落を書きましょう！' : 'まだフレーズがありません。最初の言葉を紡ぎましょう！'}
+        </p>
+      ) : isNovel ? (
+        <div className="space-y-4 font-serif">
+          {sorted.map((sentence) => {
+            const member = memberMap.get(sentence.user_id)
+            return (
+              <div key={sentence.id} className="relative pl-3 border-l-2" style={{ borderColor: member?.color ?? '#9ca3af' }}>
+                <p className="text-gray-900 text-base leading-8 whitespace-pre-wrap">{sentence.content}</p>
+                <p className="text-xs text-gray-400 mt-1">{member?.users?.display_name ?? '不明'}</p>
+              </div>
+            )
+          })}
+        </div>
       ) : (
         <div className="space-y-1">
-          {[...sentences].sort((a, b) => a.seq - b.seq).map((sentence) => {
+          {sorted.map((sentence) => {
             const member = memberMap.get(sentence.user_id)
             return (
               <span key={sentence.id} className="inline">

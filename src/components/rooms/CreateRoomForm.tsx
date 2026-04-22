@@ -59,9 +59,53 @@ export function CreateRoomForm() {
   const [turnOrderMode, setTurnOrderMode] = useState<'fixed' | 'random'>('fixed')
   const [gameMode, setGameMode] = useState<'open' | 'secret_battle'>('secret_battle')
   const [maxTurns, setMaxTurns] = useState(48)
+  const [roomMode, setRoomMode] = useState<'relay' | 'novel'>('relay')
+
+  const handleRoomModeChange = (next: 'relay' | 'novel') => {
+    setRoomMode(next)
+    if (next === 'novel') {
+      setCharLimit(null)
+      if (timerSeconds < 120) setTimerSeconds(120)
+    } else {
+      setCharLimit(300)
+    }
+  }
 
   return (
     <form action={formAction} className="space-y-5">
+      <input type="hidden" name="mode" value={roomMode} />
+
+      {/* ルームモード */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">ルームモード</label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => handleRoomModeChange('relay')}
+            className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-colors ${
+              roomMode === 'relay'
+                ? 'border-indigo-500 bg-indigo-50'
+                : 'border-gray-200 bg-white hover:border-indigo-300'
+            }`}
+          >
+            <span className="text-sm font-semibold text-gray-800">言葉のバトン</span>
+            <span className="text-xs text-gray-500 mt-1">短いフレーズをリレーする従来モード</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleRoomModeChange('novel')}
+            className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-colors ${
+              roomMode === 'novel'
+                ? 'border-indigo-500 bg-indigo-50'
+                : 'border-gray-200 bg-white hover:border-indigo-300'
+            }`}
+          >
+            <span className="text-sm font-semibold text-gray-800">小説バトル</span>
+            <span className="text-xs text-gray-500 mt-1">段落単位の長文。文字数∞・長タイマーに自動設定</span>
+          </button>
+        </div>
+      </div>
+
       {/* カテゴリ */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
