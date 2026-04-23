@@ -83,31 +83,28 @@
 | 2 | ホスト時間設定 (U2) | ✅ 完了 | `timer_seconds` 10〜600秒、プリセットボタン + 数値入力 UI |
 | 3 | テーマ入力 C2/C3 | ✅ 完了 | `room_themes` テーブル、WaitingRoom フォーム、WritingRoom 表示 |
 | 4 | ターン順ランダム C5 | ✅ 完了 | `turn_order_mode` カラム、session.id シードのクライアントシャッフル |
-| 5 | AI 判定 C4/E2/E3 | ⬜ 未着手 | 次フェーズ（AI コスト・プロンプト設計が必要） |
+| 5 | AI 判定 C4/E2/E3 | ✅ 完了 | `score-session.ts`・`assign-themes.ts`、3ターンごとにバックグラウンドでスコアリング |
 | 6 | 音声入力 U3 | ✅ 完了 | Web Speech API、ja-JP、マイク権限エラー表示 |
 | 7 | 自動更新修正 U1 | ✅ 完了 | `revalidatePath('/library')` + LibraryList Realtime |
-| 8 | 小説モード C1 | ⬜ 未着手 | char_limit 上限は 200 まで拡張済み。段落表示・モード切替は次フェーズ |
+| 8 | 小説モード C1 | ✅ 完了 | `rooms.mode`（relay/novel）追加、段落表示・モード選択UI・フェーズヒント（E4） |
 
-**DB マイグレーション適用済み:**
+**DB マイグレーション適用済み（ローカル）:**
 - `007_timer_range_and_turn_order.sql` — `timer_seconds` 制約緩和 + `turn_order_mode`
 - `008_room_themes.sql` — `room_themes` テーブル新設
+- `009_game_mode_ai_sessions.sql` — `game_mode`・`ai_session_metrics` 関連
+- `010_char_limit_nullable_secret_default.sql` — `char_limit` nullable 化・`game_mode` デフォルト `secret_battle`
+- `011_novel_mode.sql` — `rooms.mode`（relay/novel）カラム追加 ⚠️ **本番への適用が必要**
 
 ---
 
 ### 残タスク（次フェーズ）
 
-**AI 判定（C4/E2/E3）の実装方針（未着手）:**
-- Server Action または `/api/ai-score` ルートで Claude API を呼び出す
-- 入力: 直近 K 文 + 全プレイヤーのテーマ → テーマ適合度スコア（0〜100%）
-- トリガー: `submitSentence` 後にバックグラウンド実行（`waitUntil` または Edge Function）
-- 結果保存: `ai_session_metrics` テーブル（1 セッションあたり最大呼び出し回数の上限設定必須）
-- UI: WritingRoom にスコアメーター表示
-- セキュリティ: `ANTHROPIC_API_KEY` は Secret Manager で管理、レスポンスをキャッシュ
+**すべてのバックログ実装が完了しました。**
 
-**小説モード（C1）の実装方針（未着手）:**
-- `rooms.mode`（`relay` | `novel`）カラム追加（マイグレーション）
-- `novel` モード時: WritingRoom の NovelViewer を段落寄せに変更、char_limit デフォルト 150
-- CreateRoomForm にモード選択 UI 追加
+次の PR マージ前に確認すること:
+1. `supabase/migrations/011_novel_mode.sql` を本番 Supabase に適用する
+2. `ANTHROPIC_API_KEY` が本番 Cloud Run の Secret Manager に設定されていることを確認する
+3. 本番でゲームを1セッション通しでテスト（秘密バトル・小説モード各1回）
 
 ---
 
