@@ -118,7 +118,7 @@ export default async function RoomPage({
       <>
         <Header />
         <WaitingRoom
-          room={{ ...roomWithMembers, game_mode: room.game_mode ?? 'open' }}
+          room={{ ...roomWithMembers, game_mode: room.game_mode ?? 'open', mode: room.mode ?? 'relay' }}
           currentUserId={user.id}
           inviteUrl={inviteUrl}
           initialThemes={themesData ?? []}

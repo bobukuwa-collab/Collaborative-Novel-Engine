@@ -13,6 +13,7 @@ const createRoomSchema = z.object({
   turn_order_mode: z.enum(['fixed', 'random']).default('fixed'),
   game_mode: z.enum(['open', 'secret_battle']).default('secret_battle'),
   max_turns: z.coerce.number().int().min(5).max(200).default(48),
+  mode: z.enum(['relay', 'novel']).default('relay'),
 })
 
 const VALID_BASE = {
@@ -23,6 +24,7 @@ const VALID_BASE = {
   turn_order_mode: 'fixed',
   game_mode: 'secret_battle',
   max_turns: '48',
+  mode: 'relay',
 }
 
 const MEMBER_COLORS = [
@@ -223,6 +225,33 @@ describe('createRoomSchema', () => {
 
   it('turn_order_mode が不正値の場合はエラー', () => {
     const result = createRoomSchema.safeParse({ ...VALID_BASE, turn_order_mode: 'shuffle' })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('mode', () => {
+  it('relay は有効', () => {
+    const result = createRoomSchema.safeParse({ ...VALID_BASE, mode: 'relay' })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.mode).toBe('relay')
+  })
+
+  it('novel は有効', () => {
+    const result = createRoomSchema.safeParse({ ...VALID_BASE, mode: 'novel' })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.mode).toBe('novel')
+  })
+
+  it('未指定の場合は relay にデフォルト', () => {
+    const without = { ...VALID_BASE }
+    delete (without as { mode?: string }).mode
+    const result = createRoomSchema.safeParse(without)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.mode).toBe('relay')
+  })
+
+  it('不正値はエラー', () => {
+    const result = createRoomSchema.safeParse({ ...VALID_BASE, mode: 'battle' })
     expect(result.success).toBe(false)
   })
 })
