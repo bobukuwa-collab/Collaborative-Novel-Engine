@@ -369,6 +369,17 @@ export function WritingRoom({
           </div>
         )}
 
+        {/* 物語フェーズヒント（E4） */}
+        {room.mode === 'novel' && (() => {
+          const phase = getStoryPhase(session.current_turn, maxTurnCap)
+          return (
+            <div className={`border rounded-xl px-3 py-2 flex items-center gap-2 text-xs ${phase.color}`}>
+              <span className="font-bold shrink-0">[{phase.label}]</span>
+              <span>{phase.hint}</span>
+            </div>
+          )
+        })()}
+
         {/* ターン表示 + テーマ */}
         <TurnIndicator
           currentMember={currentMember}
@@ -494,6 +505,16 @@ export function WritingRoom({
       </div>
     </main>
   )
+}
+
+type PhaseInfo = { label: string; hint: string; color: string }
+
+function getStoryPhase(currentTurn: number, maxTurns: number): PhaseInfo {
+  const ratio = maxTurns > 0 ? currentTurn / maxTurns : 0
+  if (ratio < 0.25) return { label: '導入', hint: '人物・状況・世界観を丁寧に描きましょう', color: 'text-sky-600 bg-sky-50 border-sky-200' }
+  if (ratio < 0.55) return { label: '展開', hint: '出来事を動かし、登場人物の関係を深めましょう', color: 'text-emerald-600 bg-emerald-50 border-emerald-200' }
+  if (ratio < 0.80) return { label: 'クライマックス', hint: '物語の山場へ向けて盛り上げましょう', color: 'text-orange-600 bg-orange-50 border-orange-200' }
+  return { label: '解決', hint: '伏線を回収し、結末へ向かいましょう', color: 'text-purple-600 bg-purple-50 border-purple-200' }
 }
 
 function TimerDisplay({ timeLeft, total }: { timeLeft: number; total: number }) {
