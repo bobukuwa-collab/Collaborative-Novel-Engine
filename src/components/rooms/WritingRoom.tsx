@@ -151,6 +151,10 @@ export function WritingRoom({
   const skipCalledRef = useRef(false)
   const contentRef = useRef(content)
   useEffect(() => { contentRef.current = content }, [content])
+  const sessionRef = useRef(session)
+  useEffect(() => { sessionRef.current = session }, [session])
+  const [justBecameMyTurn, setJustBecameMyTurn] = useState(false)
+  const prevTurnRef = useRef(initialSession.current_turn)
 
   const effectiveCharLimit = room.char_limit ?? HIDDEN_MAX_CHARS
 
@@ -216,6 +220,18 @@ export function WritingRoom({
   useEffect(() => {
     if (!isMyTurn) stopListening()
   }, [isMyTurn, stopListening])
+
+  // ターン変化を検知して通知
+  useEffect(() => {
+    if (session.current_turn !== prevTurnRef.current) {
+      prevTurnRef.current = session.current_turn
+      if (isMyTurn) {
+        setJustBecameMyTurn(true)
+        const t = setTimeout(() => setJustBecameMyTurn(false), 3000)
+        return () => clearTimeout(t)
+      }
+    }
+  }, [session.current_turn, isMyTurn])
 
   // 周回数・ターン数
   const roundNumber = Math.floor(session.current_turn / memberCount) + 1
@@ -307,6 +323,28 @@ export function WritingRoom({
     return () => { supabase.removeChannel(channel) }
   }, [room.id, initialSession.id, router, currentUserId])
 
+  // ポーリングフォールバック（Realtime 取りこぼし対策、3秒ごと）
+  useEffect(() => {
+    const supabase = createClient()
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('id', initialSession.id)
+        .maybeSingle()
+      if (data && data.current_turn !== sessionRef.current.current_turn) {
+        setSession(data as Session)
+        const { data: rows } = await supabase
+          .from('sentences')
+          .select('*')
+          .eq('session_id', initialSession.id)
+          .order('seq', { ascending: true })
+        if (rows) setSentences(rows as Sentence[])
+      }
+    }, 3000)
+    return () => clearInterval(poll)
+  }, [initialSession.id])
+
   const handleVote = () => {
     setVoteError(null)
     startVoteTransition(async () => {
@@ -377,6 +415,13 @@ export function WritingRoom({
             </div>
           )
         })()}
+
+        {/* あなたのターン通知 */}
+        {justBecameMyTurn && (
+          <div className="bg-indigo-600 text-white text-center text-sm font-bold rounded-xl px-4 py-3 animate-pulse shadow-lg">
+            🎯 あなたのターンです！
+          </div>
+        )}
 
         {/* ターン表示 + テーマ */}
         <TurnIndicator
