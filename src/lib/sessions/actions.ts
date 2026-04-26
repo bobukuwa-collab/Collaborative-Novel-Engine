@@ -25,7 +25,9 @@ export async function startSession(roomId: string, _formData: FormData): Promise
     .eq('user_id', user.id)
     .single()
 
-  if (!member || member.join_order !== 0) return
+  if (!member || member.join_order !== 0) {
+    redirect(`/rooms/${roomId}?startError=${encodeURIComponent('ホストのみ開始できます')}`)
+  }
 
   const { data: existingSession } = await supabase
     .from('sessions')
@@ -34,7 +36,7 @@ export async function startSession(roomId: string, _formData: FormData): Promise
     .limit(1)
     .maybeSingle()
 
-  if (existingSession) return
+  if (existingSession) redirect(`/rooms/${roomId}`)
 
   const { data: room } = await supabase
     .from('rooms')
@@ -42,7 +44,9 @@ export async function startSession(roomId: string, _formData: FormData): Promise
     .eq('id', roomId)
     .single()
 
-  if (!room) return
+  if (!room) {
+    redirect(`/rooms/${roomId}?startError=${encodeURIComponent('ルーム情報の取得に失敗しました')}`)
+  }
 
   const timerSeconds = room.timer_seconds ?? 60
   const maxTurns = room.max_turns ?? 48
@@ -90,7 +94,9 @@ export async function startSession(roomId: string, _formData: FormData): Promise
       max_turns: maxTurns,
     })
 
-  if (sessionError) return
+  if (sessionError) {
+    redirect(`/rooms/${roomId}?startError=${encodeURIComponent(`セッション作成に失敗しました: ${sessionError.message}`)}`)
+  }
 
   await supabase
     .from('rooms')

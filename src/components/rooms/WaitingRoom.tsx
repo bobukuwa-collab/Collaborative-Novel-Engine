@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { useFormState, useFormStatus } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
@@ -60,6 +60,8 @@ export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes, sta
   const [, startTransition] = useTransition()
 
   const [themeState, themeAction] = useFormState(setTheme, null)
+  const memberCountRef = useRef(room.room_members.length)
+  useEffect(() => { memberCountRef.current = room.room_members.length }, [room.room_members.length])
 
   const isHost = room.room_members.some(
     (m) => m.user_id === currentUserId && m.join_order === 0,
@@ -124,6 +126,29 @@ export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes, sta
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
+  }, [room.id, router])
+
+  // ポーリングフォールバック（Realtime 取りこぼし対策、3秒ごと）
+  useEffect(() => {
+    const supabase = createClient()
+    const poll = setInterval(async () => {
+      const { count } = await supabase
+        .from('room_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('room_id', room.id)
+      if (count !== null && count !== memberCountRef.current) {
+        router.refresh()
+        return
+      }
+      // セッション開始を検知
+      const { data } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('room_id', room.id)
+        .maybeSingle()
+      if (data) router.refresh()
+    }, 3000)
+    return () => clearInterval(poll)
   }, [room.id, router])
 
   const startSessionForRoom = startSession.bind(null, room.id)
