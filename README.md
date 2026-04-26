@@ -301,6 +301,8 @@ options:
 
 ### 既知の課題・TODO
 
+> **2026-04-12:** ミーティング反映のバックログ（テーマ対戦・AI終了判定・タイマー自由設定など）は **`.claude/handoffs/2026-04-12_product-backlog-meeting.md`**。作業ブランチ **`feature/backlog-meeting-2026-04-12`**。Claude Code 向けの短い導線は **`CLAUDE.md`**。
+
 | 優先度 | 課題 | 対応方針 |
 |--------|------|---------|
 | 低 | Framer Motionによるターン切り替えアニメーション未実装 | v2対応 |
