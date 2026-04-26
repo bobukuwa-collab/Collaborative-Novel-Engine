@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assignThemesForMembers } from '@/lib/ai/assign-themes'
 import { scoreSessionText, shouldScoreTurn } from '@/lib/ai/score-session'
+import { generateBattleVerdict } from '@/lib/ai/battle-verdict'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
@@ -67,7 +68,7 @@ export async function startSession(roomId: string, _formData: FormData): Promise
         redirect(`/rooms/${roomId}?startError=${encodeURIComponent('参加者情報の取得に失敗しました')}`)
       }
       const userIds = mems.map((m) => m.user_id)
-      const assigned = await assignThemesForMembers(room.genre ?? 'ランダム', userIds)
+      const assigned = await assignThemesForMembers(room.genre ?? 'ランダム', userIds, roomId)
       for (const row of assigned) {
         const { error: upErr } = await admin
           .from('room_themes')
@@ -121,6 +122,7 @@ async function maybeScoreAndProposeEnd(
 ) {
   let nextLastScored = lastScoredTurn
   let coherence: number | null = null
+  let mainThemeScore: number | null = null
   const scores: Record<string, number> = {}
 
   if (shouldScoreTurn(newTurn, lastScoredTurn)) {
@@ -147,9 +149,11 @@ async function maybeScoreAndProposeEnd(
       .order('seq', { ascending: true })
 
     const storyText = (sents ?? []).map((s) => s.content).join('\n')
-    const result = await scoreSessionText({ storyText, themes })
+    const { data: roomData } = await supabase.from('rooms').select('genre').eq('id', roomId).single()
+    const result = await scoreSessionText({ storyText, themes, mainTheme: roomData?.genre ?? '' })
     Object.assign(scores, result.scores)
     coherence = result.coherence
+    mainThemeScore = result.mainThemeScore
     nextLastScored = newTurn
   }
 
@@ -165,6 +169,7 @@ async function maybeScoreAndProposeEnd(
   if (nextLastScored !== lastScoredTurn) {
     patch.coherence_score = coherence
     patch.last_scored_turn = nextLastScored
+    if (mainThemeScore !== null) patch.main_theme_score = mainThemeScore
     try {
       const admin = createAdminClient()
       for (const [uid, val] of Object.entries(scores)) {
@@ -310,11 +315,11 @@ async function completeNovel(roomId: string) {
 
   const { data: room } = await supabase
     .from('rooms')
-    .select('genre')
+    .select('genre, game_mode')
     .eq('id', roomId)
     .single()
 
-  const title = room ? `${room.genre}の言葉` : '無題の言葉'
+  const title = room ? `${room.genre}の物語` : '無題の物語'
 
   const { data: novel, error: novelError } = await supabase
     .from('novels')
@@ -331,6 +336,16 @@ async function completeNovel(roomId: string) {
     return { error: `作品の保存に失敗しました: ${novelError?.message}` }
   }
 
+  // バトル判定解説を生成
+  if (room?.game_mode === 'secret_battle') {
+    try {
+      const verdict = await buildBattleVerdict(supabase, roomId, room.genre ?? '')
+      if (verdict) {
+        await supabase.from('novels').update({ battle_verdict: verdict }).eq('id', novel.id)
+      }
+    } catch { /* 解説生成失敗は無視して完結処理を続行 */ }
+  }
+
   await supabase
     .from('rooms')
     .update({ status: 'completed' })
@@ -340,6 +355,45 @@ async function completeNovel(roomId: string) {
   revalidatePath(`/novels/${novel.id}`)
 
   return { novelId: novel.id }
+}
+
+async function buildBattleVerdict(
+  supabase: ReturnType<typeof createClient>,
+  roomId: string,
+  genre: string,
+): Promise<string | null> {
+  const { data: session } = await supabase
+    .from('sessions').select('id').eq('room_id', roomId)
+    .order('created_at', { ascending: false }).limit(1).single()
+  if (!session) return null
+
+  const [scoresRes, themesRes, sentencesRes, membersRes] = await Promise.all([
+    supabase.from('session_theme_scores').select('user_id, score').eq('session_id', session.id),
+    supabase.from('room_themes').select('user_id, theme_text').eq('room_id', roomId),
+    supabase.from('sentences').select('content').eq('session_id', session.id).order('seq', { ascending: true }),
+    supabase.from('room_members').select('user_id, users(display_name)').eq('room_id', roomId),
+  ])
+
+  const themeScores = scoresRes.data ?? []
+  if (themeScores.length === 0) return null
+
+  const themes = themesRes.data ?? []
+  const storyText = (sentencesRes.data ?? []).map((s: { content: string }) => s.content).join('\n')
+  const members = membersRes.data ?? []
+
+  const players = themeScores.map((s: { user_id: string; score: number }) => {
+    const m = members.find((mb: { user_id: string }) => mb.user_id === s.user_id)
+    const usersField = m?.users
+    const displayName = Array.isArray(usersField)
+      ? (usersField[0] as { display_name?: string })?.display_name
+      : (usersField as unknown as { display_name?: string } | null)?.display_name
+    const name = displayName ?? '不明'
+    const theme = themes.find((t: { user_id: string; theme_text: string }) => t.user_id === s.user_id)?.theme_text ?? ''
+    return { name, theme, score: s.score }
+  })
+
+  const winner = players.reduce((a, b) => (a.score >= b.score ? a : b))
+  return generateBattleVerdict({ storyText, genre, players, winnerName: winner.name })
 }
 
 export async function voteToEnd(roomId: string) {

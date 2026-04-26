@@ -1,56 +1,56 @@
 'use client'
 
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts'
-
 type Props = {
   data: { name: string; sentences: number; characters: number; color: string }[]
 }
 
 export function ContributionChart({ data }: Props) {
-  const sentenceData = data.map((d) => ({ name: d.name, value: d.sentences, color: d.color }))
-  const charData = data.map((d) => ({ name: d.name, value: d.characters, color: d.color }))
+  const totalSentences = data.reduce((s, d) => s + d.sentences, 0)
+  const totalChars = data.reduce((s, d) => s + d.characters, 0)
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <ChartBlock title="投稿文数" data={sentenceData} unit="文" />
-      <ChartBlock title="総文字数" data={charData} unit="字" />
+    <div className="space-y-5">
+      <BarBlock
+        title="段落数"
+        items={data.map((d) => ({ name: d.name, value: d.sentences, total: totalSentences, color: d.color, unit: '段落' }))}
+      />
+      <BarBlock
+        title="文字数"
+        items={data.map((d) => ({ name: d.name, value: d.characters, total: totalChars, color: d.color, unit: '字' }))}
+      />
     </div>
   )
 }
 
-function ChartBlock({
+function BarBlock({
   title,
-  data,
-  unit,
+  items,
 }: {
   title: string
-  data: { name: string; value: number; color: string }[]
-  unit: string
+  items: { name: string; value: number; total: number; color: string; unit: string }[]
 }) {
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-600 mb-2 text-center">{title}</h3>
-      <ResponsiveContainer width="100%" height={200}>
-        <PieChart>
-          <Pie
-            data={data}
-            cx="50%"
-            cy="50%"
-            outerRadius={75}
-            dataKey="value"
-            label={({ name, percent }) =>
-              `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-            }
-            labelLine={false}
-          >
-            {data.map((entry) => (
-              <Cell key={entry.name} fill={entry.color} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(value) => [`${value}${unit}`, '']} />
-          <Legend />
-        </PieChart>
-      </ResponsiveContainer>
+      <p className="text-xs font-medium text-stone-500 mb-2">{title}</p>
+      <div className="space-y-2">
+        {items.map((item) => {
+          const pct = item.total > 0 ? Math.round((item.value / item.total) * 100) : 0
+          return (
+            <div key={item.name} className="flex items-center gap-3">
+              <span className="text-xs text-stone-600 w-20 shrink-0 truncate">{item.name}</span>
+              <div className="flex-1 h-4 bg-stone-100 rounded overflow-hidden">
+                <div
+                  className="h-full rounded transition-all"
+                  style={{ width: `${pct}%`, backgroundColor: item.color }}
+                />
+              </div>
+              <span className="text-xs text-stone-500 w-24 text-right shrink-0">
+                {item.value.toLocaleString()}{item.unit}（{pct}%）
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

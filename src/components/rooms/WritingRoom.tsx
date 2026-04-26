@@ -55,6 +55,7 @@ type Session = {
   timer_end: string
   max_turns?: number
   coherence_score?: number | null
+  main_theme_score?: number | null
   end_proposed?: boolean
   last_scored_turn?: number
 }
@@ -379,15 +380,15 @@ export function WritingRoom({
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 py-8 px-4">
+    <main className="min-h-screen bg-stone-100 py-8 px-4">
       <div className="max-w-2xl mx-auto space-y-4">
 
         {/* ヘッダー */}
-        <div className="bg-white rounded-xl shadow p-4 flex items-center justify-between">
+        <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-4 flex items-center justify-between">
           <div>
-            <p className="text-xs text-gray-500">カテゴリ</p>
-            <h1 className="font-bold text-gray-800">{room.genre}</h1>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-stone-400">カテゴリ</p>
+            <h1 className="font-bold text-stone-800">{room.genre}</h1>
+            <p className="text-xs text-stone-400 mt-0.5">
               ターン {session.current_turn + 1} / 上限 {maxTurnCap}
               {isSecret ? ' · 秘密テーマ対戦' : ''}
             </p>
@@ -396,14 +397,19 @@ export function WritingRoom({
         </div>
 
         {session.end_proposed && (
-          <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-xl p-3">
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3">
             早期終了が提案されています（スコア・完成度またはターン上限）。全員で完結に投票できます。
           </div>
         )}
 
-        {typeof session.coherence_score === 'number' && (
-          <div className="bg-white rounded-xl shadow p-3 text-xs text-gray-600">
-            物語の完成度: <span className="font-semibold text-gray-800">{session.coherence_score}</span> / 100
+        {(typeof session.coherence_score === 'number' || typeof session.main_theme_score === 'number') && (
+          <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-3 text-xs text-stone-500 flex flex-wrap gap-4">
+            {typeof session.coherence_score === 'number' && (
+              <span>物語の完成度: <span className="font-semibold text-stone-700">{session.coherence_score}</span> / 100</span>
+            )}
+            {typeof session.main_theme_score === 'number' && (
+              <span>メインテーマ一致度: <span className="font-semibold text-stone-700">{session.main_theme_score}</span> / 100</span>
+            )}
           </div>
         )}
 
@@ -424,7 +430,7 @@ export function WritingRoom({
 
         {/* あなたのターン通知 */}
         {justBecameMyTurn && (
-          <div className="bg-indigo-600 text-white text-center text-sm font-bold rounded-xl px-4 py-3 animate-pulse shadow-lg">
+          <div className="bg-slate-800 text-white text-center text-sm font-bold rounded-xl px-4 py-3 animate-pulse shadow-lg">
             🎯 あなたのターンです！
           </div>
         )}
@@ -442,9 +448,9 @@ export function WritingRoom({
         />
 
         {isSecret && myThemeRow && (
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-sm">
-            <p className="text-xs text-indigo-600 font-semibold mb-1">あなただけの秘密テーマ</p>
-            <p className="text-gray-900 font-medium">「{myThemeRow.theme_text}」</p>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm">
+            <p className="text-xs text-slate-500 font-semibold mb-1">あなただけの秘密テーマ</p>
+            <p className="text-stone-800 font-medium">「{myThemeRow.theme_text}」</p>
           </div>
         )}
 
@@ -454,18 +460,18 @@ export function WritingRoom({
         )}
 
         {/* 完結投票 */}
-        <div className="bg-white rounded-xl shadow p-4">
+        <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-gray-500 mb-1">完結投票</p>
-              <p className="text-sm text-gray-700">
-                <span className="font-bold text-indigo-600">{voteCount}</span>
-                <span className="text-gray-400"> / {memberCount}人</span>
+              <p className="text-xs text-stone-400 mb-1">完結投票</p>
+              <p className="text-sm text-stone-700">
+                <span className="font-bold text-slate-700">{voteCount}</span>
+                <span className="text-stone-400"> / {memberCount}人</span>
                 　（{threshold}票で完結）
               </p>
-              <div className="mt-2 w-40 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div className="mt-2 w-40 h-1.5 bg-stone-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-indigo-400 rounded-full transition-all"
+                  className="h-full bg-slate-500 rounded-full transition-all"
                   style={{ width: `${Math.min(100, (voteCount / threshold) * 100)}%` }}
                 />
               </div>
@@ -476,8 +482,8 @@ export function WritingRoom({
                 disabled={myVoted || isVoting || sentences.length === 0}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                   myVoted
-                    ? 'bg-indigo-100 text-indigo-400 cursor-default'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed'
+                    ? 'bg-stone-100 text-stone-400 cursor-default'
+                    : 'bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed'
                 }`}
               >
                 {myVoted ? '投票済み ✓' : isVoting ? '投票中...' : '完結に投票'}
@@ -491,13 +497,13 @@ export function WritingRoom({
 
         {/* 入力欄 */}
         {turnLocked ? (
-          <div className="bg-gray-100 rounded-xl shadow p-4 text-center text-sm text-gray-600">
+          <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 text-center text-sm text-stone-500">
             最大ターンに達しました。完結に投票して作品をまとめてください。
           </div>
         ) : isMyTurn ? (
-          <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow p-4 space-y-3">
-            <div className="flex justify-between text-xs text-gray-500">
-              <span className="text-indigo-600 font-medium">あなたのターンです！</span>
+          <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-stone-200 p-4 space-y-3">
+            <div className="flex justify-between text-xs text-stone-500">
+              <span className="text-slate-600 font-medium">あなたのターンです！</span>
               <span className={content.length > effectiveCharLimit ? 'text-red-500' : ''}>
                 {content.length} / {room.char_limit === null ? '∞' : `${effectiveCharLimit}文字`}
               </span>
@@ -510,10 +516,10 @@ export function WritingRoom({
                 rows={5}
                 maxLength={effectiveCharLimit}
                 disabled={isPending}
-                className={`w-full border rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 resize-none pr-10 ${
+                className={`w-full border rounded-md px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 resize-none pr-10 ${
                   isListening
-                    ? 'border-red-400 focus:ring-red-300'
-                    : 'border-gray-300 focus:ring-indigo-500'
+                    ? 'border-red-300 focus:ring-red-200'
+                    : 'border-stone-200 focus:ring-slate-400'
                 }`}
               />
               {isSpeechSupported && (
@@ -524,7 +530,7 @@ export function WritingRoom({
                   className={`absolute right-2 top-2 p-1.5 rounded-md transition-colors ${
                     isListening
                       ? 'text-red-500 bg-red-50 hover:bg-red-100 animate-pulse'
-                      : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'
+                      : 'text-stone-400 hover:text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   🎤
@@ -536,13 +542,13 @@ export function WritingRoom({
             <button
               type="submit"
               disabled={isPending || !content.trim() || content.length > effectiveCharLimit}
-              className="w-full py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+              className="w-full py-2 bg-slate-700 text-white font-semibold rounded-md hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
             >
               {isPending ? '投稿中...' : '投稿する'}
             </button>
           </form>
         ) : (
-          <div className="bg-white rounded-xl shadow p-4 text-center text-sm text-gray-500">
+          <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-4 text-center text-sm text-stone-500">
             <span
               className="inline-block w-2 h-2 rounded-full mr-2 align-middle"
               style={{ backgroundColor: currentMember?.color ?? '#9ca3af' }}
@@ -633,12 +639,12 @@ function TimerDisplay({ timeLeft, total }: { timeLeft: number; total: number }) 
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className={`text-2xl font-mono font-bold tabular-nums ${isWarning ? 'text-red-500' : 'text-gray-700'}`}>
+      <div className={`text-2xl font-mono font-bold tabular-nums ${isWarning ? 'text-red-500' : 'text-stone-700'}`}>
         {timeLeft}秒
       </div>
-      <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+      <div className="w-20 h-1.5 bg-stone-200 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${isWarning ? 'bg-red-400' : 'bg-indigo-400'}`}
+          className={`h-full rounded-full transition-all ${isWarning ? 'bg-red-400' : 'bg-slate-500'}`}
           style={{ width: `${pct * 100}%` }}
         />
       </div>
@@ -666,23 +672,23 @@ function TurnIndicator({
   isSecret: boolean
 }) {
   return (
-    <div className={`rounded-xl shadow p-3 space-y-1 ${isMyTurn ? 'bg-indigo-50 border border-indigo-200' : 'bg-white'}`}>
+    <div className={`rounded-xl shadow-sm p-3 space-y-1 ${isMyTurn ? 'bg-slate-50 border border-slate-300' : 'bg-white border border-stone-200'}`}>
       <div className="flex items-center gap-3">
         <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: currentMember?.color ?? '#9ca3af' }} />
-        <span className="text-sm font-medium text-gray-700">
+        <span className="text-sm font-medium text-stone-700">
           第{roundNumber}周 {turnInRound}/{memberCount}　ターン{turnNumber}：
           {isMyTurn
-            ? <span className="text-indigo-600 font-bold"> あなたのターン！</span>
+            ? <span className="text-slate-700 font-bold"> あなたのターン！</span>
             : <span> {currentMember?.users?.display_name ?? '不明'}さん</span>}
         </span>
       </div>
       {currentTheme && (
-        <p className="text-xs text-gray-500 pl-7">
-          テーマ：<span className="font-medium text-gray-700">「{currentTheme}」</span>
+        <p className="text-xs text-stone-500 pl-7">
+          テーマ：<span className="font-medium text-stone-700">「{currentTheme}」</span>
         </p>
       )}
       {isSecret && !isMyTurn && (
-        <p className="text-xs text-gray-400 pl-7">相手のテーマは非公開です。</p>
+        <p className="text-xs text-stone-400 pl-7">相手のテーマは非公開です。</p>
       )}
     </div>
   )

@@ -28,7 +28,7 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id')
+    .select('id, main_theme_score')
     .eq('room_id', novel.room_id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -122,6 +122,19 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
                     <span className="font-bold text-gray-800">{memberMap.get(winner.user_id)?.name ?? '不明'}</span>
                     <span>🏆</span>
                   </div>
+                </div>
+              )}
+
+              {novel.battle_verdict && (
+                <div className="bg-white border border-indigo-100 rounded-lg p-4">
+                  <p className="text-xs font-semibold text-indigo-600 mb-2">AI 審査員の講評</p>
+                  <p className="text-sm text-stone-700 leading-relaxed">{novel.battle_verdict}</p>
+                </div>
+              )}
+
+              {typeof session?.main_theme_score === 'number' && (
+                <div className="text-center text-xs text-stone-500">
+                  メインテーマ一致度：<span className="font-semibold text-stone-700">{session.main_theme_score}</span> / 100
                 </div>
               )}
 
