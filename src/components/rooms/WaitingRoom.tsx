@@ -27,7 +27,6 @@ type Room = {
   timer_seconds: number
   turn_order_mode: string
   game_mode: string
-  mode: string
   status: string
   join_code: string
   room_members: Member[]
@@ -141,7 +140,7 @@ export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes, sta
               参加待ち
             </span>
           </div>
-          <div className="grid grid-cols-5 gap-2 text-center">
+          <div className="grid grid-cols-4 gap-3 text-center">
             <div>
               <p className="text-xs text-gray-500">カテゴリ</p>
               <p className="font-semibold text-gray-800 text-sm">{room.genre}</p>
@@ -162,23 +161,15 @@ export function WaitingRoom({ room, currentUserId, inviteUrl, initialThemes, sta
                 {room.turn_order_mode === 'random' ? 'ランダム' : '固定'}
               </p>
             </div>
-            <div>
-              <p className="text-xs text-gray-500">モード</p>
-              <p className="font-semibold text-gray-800 text-sm">
-                {room.mode === 'novel' ? '小説' : 'バトン'}
-              </p>
-            </div>
           </div>
           {isSecret && (
             <p className="text-xs text-amber-700 bg-amber-50 rounded-md px-2 py-1.5 mt-3">
               秘密テーマ対戦：執筆開始時にAIが参加者それぞれに異なるテーマを配ります（他者のテーマは見えません）。
             </p>
           )}
-          {room.mode === 'novel' && (
-            <p className="text-xs text-indigo-700 bg-indigo-50 rounded-md px-2 py-1.5 mt-2">
-              小説バトルモード：段落単位の長文で執筆します。文字数制限なし・AIスコアリングあり。
-            </p>
-          )}
+          <p className="text-xs text-indigo-700 bg-indigo-50 rounded-md px-2 py-1.5 mt-2">
+            小説バトル：段落単位の長文で執筆します。AIスコアリングあり。
+          </p>
         </div>
 
         {startError && (

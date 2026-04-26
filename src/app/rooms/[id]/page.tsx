@@ -118,7 +118,7 @@ export default async function RoomPage({
       <>
         <Header />
         <WaitingRoom
-          room={{ ...roomWithMembers, game_mode: room.game_mode ?? 'open', mode: room.mode ?? 'relay' }}
+          room={{ ...roomWithMembers, game_mode: room.game_mode ?? 'open' }}
           currentUserId={user.id}
           inviteUrl={inviteUrl}
           initialThemes={themesData ?? []}
@@ -175,7 +175,6 @@ export default async function RoomPage({
             turn_order_mode: room.turn_order_mode ?? 'fixed',
             game_mode: room.game_mode ?? 'open',
             max_turns: room.max_turns ?? 48,
-            mode: room.mode ?? 'relay',
           }}
           session={session}
           members={membersWithProfile}

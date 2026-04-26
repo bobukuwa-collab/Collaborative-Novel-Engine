@@ -18,19 +18,17 @@ const CATEGORIES = [
 ]
 
 const TIMER_PRESETS = [
-  { label: '15秒', value: 15 },
-  { label: '30秒', value: 30 },
-  { label: '60秒', value: 60 },
-  { label: '90秒', value: 90 },
+  { label: '1分', value: 60 },
   { label: '2分', value: 120 },
   { label: '3分', value: 180 },
+  { label: '5分', value: 300 },
+  { label: '10分', value: 600 },
 ]
 
 const CHAR_LIMIT_PRESETS = [
-  { label: '100文字', value: 100 },
   { label: '200文字', value: 200 },
-  { label: '300文字（推奨）', value: 300 },
-  { label: '500文字', value: 500 },
+  { label: '400文字', value: 400 },
+  { label: '600文字', value: 600 },
   { label: '∞', value: null },
 ]
 
@@ -54,57 +52,15 @@ function SubmitButton() {
 
 export function CreateRoomForm() {
   const [state, formAction] = useFormState(createRoom, null)
-  const [timerSeconds, setTimerSeconds] = useState(60)
-  const [charLimit, setCharLimit] = useState<number | null>(300)
+  const [timerSeconds, setTimerSeconds] = useState(120)
+  const [charLimit, setCharLimit] = useState<number | null>(null)
   const [turnOrderMode, setTurnOrderMode] = useState<'fixed' | 'random'>('fixed')
   const [gameMode, setGameMode] = useState<'open' | 'secret_battle'>('secret_battle')
-  const [maxTurns, setMaxTurns] = useState(48)
-  const [roomMode, setRoomMode] = useState<'relay' | 'novel'>('relay')
-
-  const handleRoomModeChange = (next: 'relay' | 'novel') => {
-    setRoomMode(next)
-    if (next === 'novel') {
-      setCharLimit(null)
-      if (timerSeconds < 120) setTimerSeconds(120)
-    } else {
-      setCharLimit(300)
-    }
-  }
+  const [maxTurns, setMaxTurns] = useState(24)
 
   return (
     <form action={formAction} className="space-y-5">
-      <input type="hidden" name="mode" value={roomMode} />
-
-      {/* ルームモード */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">ルームモード</label>
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => handleRoomModeChange('relay')}
-            className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-colors ${
-              roomMode === 'relay'
-                ? 'border-indigo-500 bg-indigo-50'
-                : 'border-gray-200 bg-white hover:border-indigo-300'
-            }`}
-          >
-            <span className="text-sm font-semibold text-gray-800">言葉のバトン</span>
-            <span className="text-xs text-gray-500 mt-1">短いフレーズをリレーする従来モード</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleRoomModeChange('novel')}
-            className={`flex flex-col items-start p-3 rounded-lg border-2 text-left transition-colors ${
-              roomMode === 'novel'
-                ? 'border-indigo-500 bg-indigo-50'
-                : 'border-gray-200 bg-white hover:border-indigo-300'
-            }`}
-          >
-            <span className="text-sm font-semibold text-gray-800">小説バトル</span>
-            <span className="text-xs text-gray-500 mt-1">段落単位の長文。文字数∞・長タイマーに自動設定</span>
-          </button>
-        </div>
-      </div>
+      <input type="hidden" name="mode" value="novel" />
 
       {/* カテゴリ */}
       <div>
@@ -119,18 +75,16 @@ export function CreateRoomForm() {
       {/* 参加人数 */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">参加人数</label>
-        <select name="max_players" defaultValue="3" className={SELECT_CLASS}>
+        <select name="max_players" defaultValue="2" className={SELECT_CLASS}>
           {[2, 3, 4, 5, 6, 7, 8].map((n) => (
             <option key={n} value={n}>{n}人</option>
           ))}
         </select>
       </div>
 
-      {/* タイマー設定（自由入力 + プリセット） */}
+      {/* タイマー設定 */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          1ターンのタイマー
-        </label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">1ターンのタイマー</label>
         <div className="flex flex-wrap gap-2 mb-2">
           {TIMER_PRESETS.map((p) => (
             <button
@@ -159,9 +113,7 @@ export function CreateRoomForm() {
 
       {/* 文字数上限 */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          1ターンあたりの文字数上限
-        </label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">1ターンあたりの文字数上限</label>
         <input type="hidden" name="char_limit" value={charLimit === null ? 'null' : charLimit} />
         <div className="flex flex-wrap gap-2">
           {CHAR_LIMIT_PRESETS.map((p) => (
@@ -189,6 +141,21 @@ export function CreateRoomForm() {
             <input
               type="radio"
               name="_game_mode_ui"
+              checked={gameMode === 'secret_battle'}
+              onChange={() => setGameMode('secret_battle')}
+              className="accent-indigo-600 mt-1"
+            />
+            <span>
+              <span className="text-sm font-medium text-gray-800">秘密テーマ対戦（推奨）</span>
+              <span className="block text-xs text-gray-500">
+                開始時にAIが参加者ごとに異なるテーマを配布。自分のテーマのみ表示され、相手のテーマを知らずに執筆する。
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="_game_mode_ui"
               checked={gameMode === 'open'}
               onChange={() => setGameMode('open')}
               className="accent-indigo-600 mt-1"
@@ -198,26 +165,12 @@ export function CreateRoomForm() {
               <span className="block text-xs text-gray-500">全員のテーマが見える。開始前に各自がテーマを入力。</span>
             </span>
           </label>
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="_game_mode_ui"
-              checked={gameMode === 'secret_battle'}
-              onChange={() => setGameMode('secret_battle')}
-              className="accent-indigo-600 mt-1"
-            />
-            <span>
-              <span className="text-sm font-medium text-gray-800">秘密テーマ対戦</span>
-              <span className="block text-xs text-gray-500">
-                開始時にAIが参加者ごとに異なるテーマを配布（自分のテーマのみ表示）。サーバに SUPABASE_SERVICE_ROLE_KEY が必要です。
-              </span>
-            </span>
-          </label>
         </div>
       </div>
 
+      {/* 最大ターン数 */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">最大ターン数（強制終了の目安）</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">最大ターン数</label>
         <input
           type="number"
           name="max_turns"

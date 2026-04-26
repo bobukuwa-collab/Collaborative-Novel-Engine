@@ -15,7 +15,6 @@ const createRoomSchema = z.object({
   turn_order_mode: z.enum(['fixed', 'random']).default('fixed'),
   game_mode: z.enum(['open', 'secret_battle']).default('secret_battle'),
   max_turns: z.coerce.number().int().min(5).max(200).default(48),
-  mode: z.enum(['relay', 'novel']).default('relay'),
 })
 
 const MEMBER_COLORS = [
@@ -51,7 +50,7 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
     return { error: result.error.issues[0].message }
   }
 
-  const { genre, max_players, char_limit, timer_seconds, turn_order_mode, game_mode, max_turns, mode } = result.data
+  const { genre, max_players, char_limit, timer_seconds, turn_order_mode, game_mode, max_turns } = result.data
 
   // コード衝突時は最大3回リトライ
   let room = null
@@ -67,7 +66,7 @@ export async function createRoom(_prev: { error: string } | null, formData: Form
         turn_order_mode,
         game_mode,
         max_turns,
-        mode,
+        mode: 'novel',
         created_by: user.id,
         join_code,
       })
