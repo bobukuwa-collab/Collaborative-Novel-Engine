@@ -149,19 +149,17 @@ export default async function RoomPage({
       )
     }
 
-    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }, { data: themesData }, { data: myScoreRow }] =
+    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }, { data: themesData }, { data: allScoreRows }] =
       await Promise.all([
         supabase.from('sentences').select('*').eq('session_id', session.id).order('seq', { ascending: true }),
         supabase.from('completion_votes').select('*', { count: 'exact', head: true }).eq('room_id', params.id),
         supabase.from('completion_votes').select('user_id').eq('room_id', params.id).eq('user_id', user.id).maybeSingle(),
         supabase.from('room_themes').select('user_id, theme_text').eq('room_id', params.id),
-        supabase
-          .from('session_theme_scores')
-          .select('score')
-          .eq('session_id', session.id)
-          .eq('user_id', user.id)
-          .maybeSingle(),
+        supabase.from('session_theme_scores').select('user_id, score').eq('session_id', session.id),
       ])
+    const initialAllThemeScores = Object.fromEntries(
+      (allScoreRows ?? []).map((r: { user_id: string; score: number }) => [r.user_id, r.score])
+    )
 
     return (
       <>
@@ -183,7 +181,7 @@ export default async function RoomPage({
           initialVoteCount={voteCount ?? 0}
           myVoted={!!myVoteData}
           initialThemes={themesData ?? []}
-          initialMyThemeScore={typeof myScoreRow?.score === 'number' ? myScoreRow.score : null}
+          initialAllThemeScores={initialAllThemeScores}
         />
       </>
     )

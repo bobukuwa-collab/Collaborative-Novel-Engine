@@ -11,7 +11,7 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
 
   const { data: novel, error } = await supabase
     .from('novels')
-    .select('*, rooms(genre, max_players)')
+    .select('*, rooms(genre, max_players, game_mode)')
     .eq('id', params.id)
     .single()
 
@@ -80,8 +80,23 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
   const { data: myLike } = await supabase
     .from('likes').select('novel_id').eq('novel_id', params.id).eq('user_id', user.id).maybeSingle()
 
-  const roomInfo = novel.rooms as { genre: string; max_players: number } | null
+  const roomInfo = novel.rooms as { genre: string; max_players: number; game_mode: string } | null
   const genre = roomInfo?.genre ?? ''
+  const isBattle = roomInfo?.game_mode === 'secret_battle'
+
+  let themes: { user_id: string; theme_text: string }[] = []
+  let themeScores: { user_id: string; score: number }[] = []
+  if (isBattle && session) {
+    const [themesRes, scoresRes] = await Promise.all([
+      supabase.from('room_themes').select('user_id, theme_text').eq('room_id', novel.room_id),
+      supabase.from('session_theme_scores').select('user_id, score').eq('session_id', session.id),
+    ])
+    themes = themesRes.data ?? []
+    themeScores = scoresRes.data ?? []
+  }
+  const winner = themeScores.length > 0
+    ? themeScores.reduce((a, b) => (a.score >= b.score ? a : b))
+    : null
   const publishedAt = novel.published_at
     ? new Date(novel.published_at).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })
     : ''
@@ -93,6 +108,54 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
       <Header />
       <main className="min-h-screen bg-stone-100 py-10 px-4">
         <div className="max-w-2xl mx-auto space-y-6">
+
+          {/* バトル結果 */}
+          {isBattle && (
+            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 p-6 space-y-5">
+              <h2 className="text-lg font-bold text-center text-indigo-900">⚔️ バトル結果</h2>
+
+              {winner && (
+                <div className="text-center">
+                  <p className="text-xs text-indigo-600 mb-2 uppercase tracking-widest">Winner</p>
+                  <div className="inline-flex items-center gap-2 bg-white rounded-full px-5 py-2 shadow border border-indigo-200">
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: memberMap.get(winner.user_id)?.color ?? '#9ca3af' }} />
+                    <span className="font-bold text-gray-800">{memberMap.get(winner.user_id)?.name ?? '不明'}</span>
+                    <span>🏆</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-3">
+                {Array.from(memberMap.entries()).map(([uid, m]) => {
+                  const score = themeScores.find((s) => s.user_id === uid)?.score ?? null
+                  const theme = themes.find((t) => t.user_id === uid)?.theme_text
+                  const isWinner = winner?.user_id === uid
+                  return (
+                    <div key={uid} className={`bg-white rounded-lg p-4 border ${isWinner ? 'border-yellow-300 shadow-md' : 'border-indigo-100'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: m.color }} />
+                          <span className="font-semibold text-sm text-gray-800">{m.name}</span>
+                          {isWinner && <span className="text-sm">🏆</span>}
+                        </div>
+                        <span className="font-bold text-indigo-600 text-sm">{score !== null ? `${score}pt` : '採点なし'}</span>
+                      </div>
+                      {theme && (
+                        <p className="text-xs text-gray-500 mb-2">
+                          秘密テーマ：<span className="font-medium text-gray-800">「{theme}」</span>
+                        </p>
+                      )}
+                      {score !== null && (
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${score}%`, backgroundColor: m.color }} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 書籍カバー風タイトル */}
           <div

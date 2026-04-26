@@ -101,7 +101,7 @@ type Props = {
   initialVoteCount: number
   myVoted: boolean
   initialThemes: Theme[]
-  initialMyThemeScore: number | null
+  initialAllThemeScores: Record<string, number>
 }
 
 /**
@@ -133,13 +133,13 @@ export function WritingRoom({
   initialVoteCount,
   myVoted: initialMyVoted,
   initialThemes,
-  initialMyThemeScore,
+  initialAllThemeScores,
 }: Props) {
   const router = useRouter()
   const [session, setSession] = useState(initialSession)
   const [sentences, setSentences] = useState(initialSentences)
   const [themes, setThemes] = useState<Theme[]>(initialThemes)
-  const [myThemeScore, setMyThemeScore] = useState<number | null>(initialMyThemeScore)
+  const [allThemeScores, setAllThemeScores] = useState<Record<string, number>>(initialAllThemeScores)
   const [content, setContent] = useState('')
   const [timeLeft, setTimeLeft] = useState(room.timer_seconds)
   const [error, setError] = useState<string | null>(null)
@@ -314,8 +314,8 @@ export function WritingRoom({
         filter: `session_id=eq.${initialSession.id}`,
       }, (payload) => {
         const row = payload.new as { user_id?: string; score?: number }
-        if (row.user_id === currentUserId && typeof row.score === 'number') {
-          setMyThemeScore(row.score)
+        if (row.user_id && typeof row.score === 'number') {
+          setAllThemeScores((prev) => ({ ...prev, [row.user_id!]: row.score! }))
         }
       })
       .subscribe()
@@ -341,9 +341,16 @@ export function WritingRoom({
           .order('seq', { ascending: true })
         if (rows) setSentences(rows as Sentence[])
       }
+      const { data: novelData } = await supabase
+        .from('novels')
+        .select('id')
+        .eq('room_id', room.id)
+        .eq('status', 'completed')
+        .maybeSingle()
+      if (novelData) router.push(`/novels/${novelData.id}`)
     }, 3000)
     return () => clearInterval(poll)
-  }, [initialSession.id])
+  }, [initialSession.id, room.id, router])
 
   const handleVote = () => {
     setVoteError(null)
@@ -394,15 +401,14 @@ export function WritingRoom({
           </div>
         )}
 
-        {(typeof session.coherence_score === 'number' || myThemeScore !== null) && (
-          <div className="bg-white rounded-xl shadow p-3 text-xs text-gray-600 space-y-1">
-            {typeof session.coherence_score === 'number' && (
-              <p>物語のつながり（参考）: <span className="font-semibold text-gray-800">{session.coherence_score}</span> / 100</p>
-            )}
-            {myThemeScore !== null && (
-              <p>あなたのテーマへの寄与（参考）: <span className="font-semibold text-indigo-700">{myThemeScore}</span> / 100</p>
-            )}
+        {typeof session.coherence_score === 'number' && (
+          <div className="bg-white rounded-xl shadow p-3 text-xs text-gray-600">
+            物語の完成度: <span className="font-semibold text-gray-800">{session.coherence_score}</span> / 100
           </div>
+        )}
+
+        {Object.keys(allThemeScores).length > 0 && (
+          <BattleGauge members={orderedMembers} allThemeScores={allThemeScores} currentUserId={currentUserId} />
         )}
 
         {/* 物語フェーズヒント */}
@@ -546,6 +552,68 @@ export function WritingRoom({
         )}
       </div>
     </main>
+  )
+}
+
+function BattleGauge({ members, allThemeScores, currentUserId }: {
+  members: Member[]
+  allThemeScores: Record<string, number>
+  currentUserId: string
+}) {
+  const scored = members.filter((m) => allThemeScores[m.user_id] !== undefined)
+  if (scored.length === 0) return null
+  const total = scored.reduce((sum, m) => sum + (allThemeScores[m.user_id] ?? 0), 0) || 1
+
+  if (scored.length === 2) {
+    const [p1, p2] = scored
+    const pct1 = Math.round(((allThemeScores[p1.user_id] ?? 0) / total) * 100)
+    const pct2 = 100 - pct1
+    return (
+      <div className="bg-white rounded-xl shadow p-4 space-y-2">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">⚡ バトルボルテージ</p>
+        <div className="flex items-center justify-between text-xs font-medium">
+          <span style={{ color: p1.color }}>{p1.users?.display_name ?? '不明'}{p1.user_id === currentUserId ? ' ★' : ''}</span>
+          <span style={{ color: p2.color }}>{p2.users?.display_name ?? '不明'}{p2.user_id === currentUserId ? ' ★' : ''}</span>
+        </div>
+        <div className="h-6 rounded-full overflow-hidden flex">
+          <div className="h-full flex items-center justify-center text-white text-xs font-bold transition-all duration-700"
+            style={{ width: `${pct1}%`, backgroundColor: p1.color }}>
+            {pct1 > 15 && `${pct1}%`}
+          </div>
+          <div className="h-full flex items-center justify-center text-white text-xs font-bold transition-all duration-700"
+            style={{ width: `${pct2}%`, backgroundColor: p2.color }}>
+            {pct2 > 15 && `${pct2}%`}
+          </div>
+        </div>
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>{allThemeScores[p1.user_id] ?? 0}pt</span>
+          <span>{allThemeScores[p2.user_id] ?? 0}pt</span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow p-4 space-y-3">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">⚡ バトルボルテージ</p>
+      {scored.map((m) => {
+        const score = allThemeScores[m.user_id] ?? 0
+        const pct = Math.round((score / total) * 100)
+        return (
+          <div key={m.user_id} className="flex items-center gap-3">
+            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
+            <span className="text-xs text-gray-600 w-20 truncate">
+              {m.users?.display_name ?? '不明'}{m.user_id === currentUserId ? ' ★' : ''}
+            </span>
+            <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-700"
+                style={{ width: `${pct}%`, backgroundColor: m.color }} />
+            </div>
+            <span className="text-xs font-bold text-gray-700 w-8 text-right">{score}pt</span>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
