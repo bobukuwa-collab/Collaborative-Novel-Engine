@@ -11,7 +11,7 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
 
   const { data: novel, error } = await supabase
     .from('novels')
-    .select('*, rooms(genre, max_players, mode)')
+    .select('*, rooms(genre, max_players)')
     .eq('id', params.id)
     .single()
 
@@ -80,9 +80,8 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
   const { data: myLike } = await supabase
     .from('likes').select('novel_id').eq('novel_id', params.id).eq('user_id', user.id).maybeSingle()
 
-  const roomInfo = novel.rooms as { genre: string; max_players: number; mode?: string } | null
+  const roomInfo = novel.rooms as { genre: string; max_players: number } | null
   const genre = roomInfo?.genre ?? ''
-  const isNovelMode = roomInfo?.mode === 'novel'
   const publishedAt = novel.published_at
     ? new Date(novel.published_at).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })
     : ''
@@ -113,7 +112,7 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
                     {authorNames.length > 0 ? authorNames.join('・') + ' 共著' : ''}
                   </p>
                   <p className="text-xs text-gray-400 mt-1">
-                    {publishedAt} 完成　全{sentences.length}{isNovelMode ? '段落' : 'フレーズ'}
+                    {publishedAt} 完成　全{sentences.length}段落
                   </p>
                 </div>
                 <LikeButton novelId={params.id} initialLiked={!!myLike} initialCount={likeCount ?? 0} />
@@ -134,8 +133,8 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
 
             <div className="px-8 py-8">
               {sentences.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-8">フレーズがありません。</p>
-              ) : isNovelMode ? (
+                <p className="text-gray-400 text-sm text-center py-8">段落がありません。</p>
+              ) : (
                 <div className="space-y-6" style={{ fontFamily: '"Noto Serif JP", Georgia, serif' }}>
                   {sentences.map((s) => {
                     const member = memberMap.get(s.user_id)
@@ -148,26 +147,6 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
                         <p className="text-gray-800 text-[0.95rem] leading-[2] whitespace-pre-wrap">{s.content}</p>
                         <p className="text-xs text-amber-700/50 mt-1">{member?.name ?? '不明'}</p>
                       </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div
-                  className="text-gray-800 leading-[2.2] text-[0.95rem]"
-                  style={{ fontFamily: '"Noto Serif JP", Georgia, serif' }}
-                >
-                  {sentences.map((s, i) => {
-                    const member = memberMap.get(s.user_id)
-                    return (
-                      <span key={s.id}>
-                        <span
-                          className="inline-block w-1.5 h-1.5 rounded-full mx-1 align-middle opacity-60"
-                          style={{ backgroundColor: member?.color ?? '#9ca3af' }}
-                          title={member?.name ?? '不明'}
-                        />
-                        {s.content}
-                        {i < sentences.length - 1 ? '　' : ''}
-                      </span>
                     )
                   })}
                 </div>
@@ -190,16 +169,14 @@ export default async function NovelPage({ params }: { params: { id: string } }) 
           {/* 貢献率グラフ */}
           {contributionData.length > 0 && (
             <div className="bg-white rounded-xl shadow p-6">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-                {isNovelMode ? '段落' : 'フレーズ'}貢献率
-              </h2>
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">段落貢献率</h2>
               <ContributionChart data={contributionData} />
               <div className="mt-4 space-y-1">
                 {contributionData.map((d) => (
                   <div key={d.name} className="flex items-center gap-2 text-xs text-gray-600">
                     <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
                     <span className="font-medium">{d.name}</span>
-                    <span className="text-gray-400">{d.sentences}{isNovelMode ? '段落' : 'フレーズ'} · {d.characters}字</span>
+                    <span className="text-gray-400">{d.sentences}段落 · {d.characters}字</span>
                   </div>
                 ))}
               </div>

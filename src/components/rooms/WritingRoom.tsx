@@ -90,7 +90,6 @@ type Room = {
   turn_order_mode: string
   game_mode: string
   max_turns: number
-  mode: string
 }
 
 type Props = {
@@ -346,7 +345,6 @@ export function WritingRoom({
             <p className="text-xs text-gray-400 mt-0.5">
               ターン {session.current_turn + 1} / 上限 {maxTurnCap}
               {isSecret ? ' · 秘密テーマ対戦' : ''}
-              {room.mode === 'novel' ? ' · 小説バトル' : ''}
             </p>
           </div>
           <TimerDisplay timeLeft={timeLeft} total={room.timer_seconds} />
@@ -369,8 +367,8 @@ export function WritingRoom({
           </div>
         )}
 
-        {/* 物語フェーズヒント（E4） */}
-        {room.mode === 'novel' && (() => {
+        {/* 物語フェーズヒント */}
+        {(() => {
           const phase = getStoryPhase(session.current_turn, maxTurnCap)
           return (
             <div className={`border rounded-xl px-3 py-2 flex items-center gap-2 text-xs ${phase.color}`}>
@@ -438,8 +436,7 @@ export function WritingRoom({
           </div>
         </div>
 
-        {/* 言葉（フレーズ一覧） */}
-        <NovelViewer sentences={sentences} members={sortedMembers} mode={room.mode} />
+        <NovelViewer sentences={sentences} members={sortedMembers} />
 
         {/* 入力欄 */}
         {turnLocked ? (
@@ -458,8 +455,8 @@ export function WritingRoom({
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder={isListening ? '🎤 聞き取り中...' : '言葉を紡いでください...'}
-                rows={3}
+                placeholder={isListening ? '🎤 聞き取り中...' : '続きを書いてください...'}
+                rows={5}
                 maxLength={effectiveCharLimit}
                 disabled={isPending}
                 className={`w-full border rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 resize-none pr-10 ${
@@ -607,21 +604,16 @@ function ThemePanel({ themes, members, currentUserId }: {
   )
 }
 
-function NovelViewer({ sentences, members, mode }: { sentences: Sentence[]; members: Member[]; mode: string }) {
+function NovelViewer({ sentences, members }: { sentences: Sentence[]; members: Member[] }) {
   const memberMap = new Map(members.map((m) => [m.user_id, m]))
   const sorted = [...sentences].sort((a, b) => a.seq - b.seq)
-  const isNovel = mode === 'novel'
 
   return (
-    <div className={`bg-white rounded-xl shadow p-4 overflow-y-auto ${isNovel ? 'min-h-48 max-h-[32rem]' : 'min-h-32 max-h-96'}`}>
-      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">
-        {isNovel ? '小説' : '言葉'}
-      </h2>
+    <div className="bg-white rounded-xl shadow p-4 min-h-48 max-h-[32rem] overflow-y-auto">
+      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">本文</h2>
       {sorted.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-4">
-          {isNovel ? 'まだ投稿がありません。最初の段落を書きましょう！' : 'まだフレーズがありません。最初の言葉を紡ぎましょう！'}
-        </p>
-      ) : isNovel ? (
+        <p className="text-gray-400 text-sm text-center py-4">まだ投稿がありません。最初の段落を書きましょう！</p>
+      ) : (
         <div className="space-y-4 font-serif">
           {sorted.map((sentence) => {
             const member = memberMap.get(sentence.user_id)
@@ -630,23 +622,6 @@ function NovelViewer({ sentences, members, mode }: { sentences: Sentence[]; memb
                 <p className="text-gray-900 text-base leading-8 whitespace-pre-wrap">{sentence.content}</p>
                 <p className="text-xs text-gray-400 mt-1">{member?.users?.display_name ?? '不明'}</p>
               </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="space-y-1">
-          {sorted.map((sentence) => {
-            const member = memberMap.get(sentence.user_id)
-            return (
-              <span key={sentence.id} className="inline">
-                <span
-                  className="inline-block w-2 h-2 rounded-full mx-0.5 align-middle flex-shrink-0"
-                  style={{ backgroundColor: member?.color ?? '#9ca3af' }}
-                  title={member?.users?.display_name ?? '不明'}
-                />
-                <span className="text-gray-900 text-sm leading-relaxed">{sentence.content}</span>
-                {' '}
-              </span>
             )
           })}
         </div>
