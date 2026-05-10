@@ -61,7 +61,7 @@ steps:
       - '--port=3000'
       - '--memory=512Mi'
       - '--min-instances=0'
-      - '--update-env-vars=NEXT_PUBLIC_SUPABASE_URL=$$NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY=$$NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SITE_URL=$$NEXT_PUBLIC_SITE_URL'
+      - '--update-env-vars=NEXT_PUBLIC_SUPABASE_URL=$$NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY=$$NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SITE_URL=$$NEXT_PUBLIC_SITE_URL,GEMINI_API_KEY=$$GEMINI_API_KEY'
 
 
   # デプロイ後に本番URLへLighthouse計測（モバイル・スコア85未満でwarn）
@@ -78,6 +78,11 @@ steps:
 substitutions:
   _REGION: 'asia-northeast1'
   _SERVICE_NAME: 'collaborative-novel'
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/GEMINI_API_KEY/versions/latest
+      env: 'GEMINI_API_KEY'
 
 options:
   logging: CLOUD_LOGGING_ONLY
