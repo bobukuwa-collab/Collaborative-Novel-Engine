@@ -1,5 +1,5 @@
 {
-  "name": "collaborative-novel-engine",
+  "name": "human-ai-novel-creator",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.101.0",
     "framer-motion": "^12.38.0",

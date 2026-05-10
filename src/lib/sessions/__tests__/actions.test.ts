@@ -9,168 +9,91 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: () => mockSupabase,
 }))
 
-vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({
-    from: (table: string) => {
-      if (table === 'room_themes') {
-        return {
-          select: () => ({
-            eq: () => ({ data: [] as { user_id: string; theme_text: string }[] }),
-          }),
-        }
-      }
-      if (table === 'session_theme_scores') {
-        return {
-          upsert: async () => ({ error: null }),
-        }
-      }
-      return { select: () => ({ eq: () => ({ data: [] }) }) }
-    },
+vi.mock('@/lib/ai/continue-story', () => ({
+  continueStory: vi.fn().mockResolvedValue('AIが書いた続き。'),
+}))
+
+vi.mock('@/lib/ai/analyze-personality', () => ({
+  analyzePersonality: vi.fn().mockResolvedValue({
+    psychopathy_score: 50,
+    empathy_score: 50,
+    imagination_score: 50,
+    darkness_score: 50,
+    personality_type: 'テスト',
+    character_title: 'テスト称号',
+    analysis_text: 'テスト分析',
   }),
 }))
 
 vi.mock('next/navigation', () => ({
-  redirect: vi.fn(),
+  redirect: vi.fn().mockImplementation((url: string) => {
+    throw Object.assign(new Error('NEXT_REDIRECT'), { digest: `NEXT_REDIRECT;${url}` })
+  }),
 }))
 
-const { skipTurn, voteToEnd } = await import('@/lib/sessions/actions')
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}))
 
-function mockSessionsForSkip(currentTurn: number) {
-  const sessionData = {
-    current_turn: currentTurn,
-    max_turns: 100,
-    room_id: 'room-a',
-    last_scored_turn: -1,
-    end_proposed: false,
-  }
-  const single = vi.fn().mockResolvedValue({ data: sessionData })
-  const innerEq = vi.fn().mockResolvedValue({ error: null })
+const { submitSentence, finishSession } = await import('@/lib/sessions/actions')
 
-  mockSupabase.from.mockImplementation((table: string) => {
-    if (table === 'sessions') {
-      return {
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({ single }),
-        }),
-        update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: innerEq }) }),
-      }
-    }
-    if (table === 'sentences') {
-      return {
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: [] as { content: string }[] }),
-          }),
-        }),
-      }
-    }
-    return {}
-  })
-}
-
-describe('skipTurn', () => {
+describe('submitSentence', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
-  it('未認証の場合はエラーを返す', async () => {
+  it('未認証の場合は /login にリダイレクトする', async () => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: null } })
-    const result = await skipTurn('session-1', 0, 60)
-    expect(result).toEqual({ error: '認証が必要です' })
+    await expect(submitSentence('session-1', 'test', 0)).rejects.toThrow('NEXT_REDIRECT')
   })
 
-  it('認証済みの場合はsuccess: trueを返す', async () => {
+  it('空文字はバリデーションエラー', async () => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
-    mockSessionsForSkip(2)
-    const result = await skipTurn('session-1', 2, 60)
-    expect(result).toEqual({ success: true })
+    const result = await submitSentence('session-1', '', 0)
+    expect(result?.error).toBeTruthy()
   })
 
-  it('current_turn + 1 でDBを更新する', async () => {
-    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
-    mockSessionsForSkip(3)
-    const mockUpdate = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      }),
-    })
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'sessions') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({
-                data: {
-                  current_turn: 3,
-                  max_turns: 100,
-                  room_id: 'room-a',
-                  last_scored_turn: -1,
-                  end_proposed: false,
-                },
-              }),
-            }),
-          }),
-          update: mockUpdate,
-        }
-      }
-      if (table === 'sentences') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({ data: [] }),
-            }),
-          }),
-        }
-      }
-      return {}
-    })
-
-    await skipTurn('session-1', 3, 60)
-    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({ current_turn: 4 }))
-  })
-
-  it('最大ターン到達後はエラー', async () => {
-    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
-    mockSupabase.from.mockImplementation((table: string) => {
-      if (table === 'sessions') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({
-                data: {
-                  current_turn: 50,
-                  max_turns: 50,
-                  room_id: 'room-a',
-                  last_scored_turn: -1,
-                  end_proposed: false,
-                },
-              }),
-            }),
-          }),
-        }
-      }
-      return {}
-    })
-    const result = await skipTurn('session-1', 50, 60)
-    expect(result?.error).toMatch(/最大ターン/)
-  })
-})
-
-describe('voteToEnd', () => {
-  beforeEach(() => { vi.clearAllMocks() })
-
-  it('未認証の場合はエラーを返す', async () => {
-    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: null } })
-    const result = await voteToEnd('room-1')
-    expect(result).toEqual({ error: '認証が必要です' })
-  })
-
-  it('既に投票済みの場合はエラーを返す', async () => {
+  it('セッションが見つからない場合はエラー', async () => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
     mockSupabase.from.mockReturnValue({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({ data: { user_id: 'user-1' } }),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'not found' } }),
     })
-    const result = await voteToEnd('room-1')
-    expect(result).toEqual({ error: 'すでに投票済みです' })
+    const result = await submitSentence('session-1', '何か書く', 0)
+    expect(result?.error).toBe('セッションが見つかりません')
+  })
+})
+
+describe('finishSession', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('未認証の場合はエラー', async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: null } })
+    const result = await finishSession('room-1', 'session-1')
+    expect(result).toEqual({ error: '認証が必要です' })
+  })
+
+  it('権限がないユーザーにはエラー', async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
+    // 呼び出し順: 1=sessions(sessionId帰属確認), 2=rooms(created_by確認)
+    let callCount = 0
+    mockSupabase.from.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) {
+        // sessions: room_id が一致することを確認
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: { room_id: 'room-1' } }),
+        }
+      }
+      // rooms: 他のユーザーが所有
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { created_by: 'other-user' } }),
+      }
+    })
+    const result = await finishSession('room-1', 'session-1')
+    expect(result).toEqual({ error: '権限がありません' })
   })
 })

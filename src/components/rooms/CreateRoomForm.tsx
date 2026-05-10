@@ -3,39 +3,17 @@
 import { useState } from 'react'
 import { useFormState, useFormStatus } from 'react-dom'
 import { createRoom } from '@/lib/rooms/actions'
+import { ALLOWED_GENRES } from '@/lib/rooms/constants'
 
-const CATEGORIES = [
-  '愛と恋',
-  '自然と季節',
-  '哲学と人生',
-  '夢と希望',
-  'ユーモア',
-  '孤独と静寂',
-  '友情と仲間',
-  '宇宙と神秘',
-  '食と日常',
-  'ランダム',
+const MAX_TURNS_PRESETS = [
+  { label: '短編 (20ターン)', value: 20 },
+  { label: '中編 (30ターン)', value: 30 },
+  { label: '長編 (50ターン)', value: 50 },
 ]
 
-const TIMER_PRESETS = [
-  { label: '1分', value: 60 },
-  { label: '2分', value: 120 },
-  { label: '3分', value: 180 },
-  { label: '5分', value: 300 },
-  { label: '10分', value: 600 },
-]
-
-const CHAR_LIMIT_PRESETS = [
-  { label: '200文字', value: 200 },
-  { label: '400文字', value: 400 },
-  { label: '600文字', value: 600 },
-  { label: '∞', value: null },
-]
-
-const SELECT_CLASS = 'w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500'
-const PRESET_BASE = 'px-3 py-1.5 text-sm rounded-md border transition-colors'
+const PRESET_BASE = 'px-4 py-2 text-sm rounded-lg border transition-colors'
 const PRESET_ACTIVE = 'bg-indigo-600 text-white border-indigo-600'
-const PRESET_IDLE = 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+const PRESET_IDLE = 'bg-white text-gray-700 border-gray-200 hover:border-indigo-400'
 
 function SubmitButton() {
   const { pending } = useFormStatus()
@@ -43,176 +21,57 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+      className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-base"
     >
-      {pending ? '作成中...' : 'ルームを作成して招待リンクを取得'}
+      {pending ? 'セッションを準備中...' : '執筆を始める'}
     </button>
   )
 }
 
 export function CreateRoomForm() {
   const [state, formAction] = useFormState(createRoom, null)
-  const [timerSeconds, setTimerSeconds] = useState(120)
-  const [charLimit, setCharLimit] = useState<number | null>(null)
-  const [turnOrderMode, setTurnOrderMode] = useState<'fixed' | 'random'>('fixed')
-  const [gameMode, setGameMode] = useState<'open' | 'secret_battle'>('secret_battle')
-  const [maxTurns, setMaxTurns] = useState(24)
+  const [maxTurns, setMaxTurns] = useState(30)
 
   return (
-    <form action={formAction} className="space-y-5">
-      <input type="hidden" name="mode" value="novel" />
-
-      {/* カテゴリ */}
+    <form action={formAction} className="space-y-6">
+      {/* ジャンル */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
-        <select name="genre" required className={SELECT_CLASS}>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+        <label className="block text-sm font-semibold text-gray-700 mb-2">物語のジャンル</label>
+        <select
+          name="genre"
+          required
+          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {ALLOWED_GENRES.map((g) => (
+            <option key={g} value={g}>{g}</option>
           ))}
         </select>
+        <p className="text-xs text-gray-400 mt-1">AIがこのジャンルに合わせて応答します</p>
       </div>
 
-      {/* 参加人数 */}
+      {/* ターン数 */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">参加人数</label>
-        <select name="max_players" defaultValue="2" className={SELECT_CLASS}>
-          {[2, 3, 4, 5, 6, 7, 8].map((n) => (
-            <option key={n} value={n}>{n}人</option>
-          ))}
-        </select>
-      </div>
-
-      {/* タイマー設定 */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">1ターンのタイマー</label>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {TIMER_PRESETS.map((p) => (
+        <label className="block text-sm font-semibold text-gray-700 mb-2">物語の長さ</label>
+        <input type="hidden" name="max_turns" value={maxTurns} />
+        <div className="flex flex-wrap gap-2">
+          {MAX_TURNS_PRESETS.map((p) => (
             <button
               key={p.value}
               type="button"
-              onClick={() => setTimerSeconds(p.value)}
-              className={`${PRESET_BASE} ${timerSeconds === p.value ? PRESET_ACTIVE : PRESET_IDLE}`}
+              onClick={() => setMaxTurns(p.value)}
+              className={`${PRESET_BASE} ${maxTurns === p.value ? PRESET_ACTIVE : PRESET_IDLE}`}
             >
               {p.label}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            name="timer_seconds"
-            value={timerSeconds}
-            min={10}
-            max={600}
-            onChange={(e) => setTimerSeconds(Number(e.target.value))}
-            className="w-24 px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center"
-          />
-          <span className="text-sm text-gray-600">秒　（10〜600秒）</span>
-        </div>
-      </div>
-
-      {/* 文字数上限 */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">1ターンあたりの文字数上限</label>
-        <input type="hidden" name="char_limit" value={charLimit === null ? 'null' : charLimit} />
-        <div className="flex flex-wrap gap-2">
-          {CHAR_LIMIT_PRESETS.map((p) => (
-            <button
-              key={String(p.value)}
-              type="button"
-              onClick={() => setCharLimit(p.value)}
-              className={`${PRESET_BASE} ${charLimit === p.value ? PRESET_ACTIVE : PRESET_IDLE}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        {charLimit === null && (
-          <p className="mt-1 text-xs text-gray-500">∞ を選択中：最大1000文字まで入力できます</p>
-        )}
-      </div>
-
-      {/* ゲームモード */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">ゲームモード</label>
-        <input type="hidden" name="game_mode" value={gameMode} />
-        <div className="space-y-2">
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="_game_mode_ui"
-              checked={gameMode === 'secret_battle'}
-              onChange={() => setGameMode('secret_battle')}
-              className="accent-indigo-600 mt-1"
-            />
-            <span>
-              <span className="text-sm font-medium text-gray-800">秘密テーマ対戦（推奨）</span>
-              <span className="block text-xs text-gray-500">
-                開始時にAIが参加者ごとに異なるテーマを配布。自分のテーマのみ表示され、相手のテーマを知らずに執筆する。
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="_game_mode_ui"
-              checked={gameMode === 'open'}
-              onChange={() => setGameMode('open')}
-              className="accent-indigo-600 mt-1"
-            />
-            <span>
-              <span className="text-sm font-medium text-gray-800">オープン</span>
-              <span className="block text-xs text-gray-500">全員のテーマが見える。開始前に各自がテーマを入力。</span>
-            </span>
-          </label>
-        </div>
-      </div>
-
-      {/* 最大ターン数 */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">最大ターン数</label>
-        <input
-          type="number"
-          name="max_turns"
-          value={maxTurns}
-          min={5}
-          max={200}
-          onChange={(e) => setMaxTurns(Number(e.target.value))}
-          className="w-24 px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center"
-        />
-        <span className="text-sm text-gray-600 ml-2">（5〜200・この回数でターンが止まります）</span>
-      </div>
-
-      {/* ターン順モード */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">ターン順</label>
-        <input type="hidden" name="turn_order_mode" value={turnOrderMode} />
-        <div className="flex gap-3">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="_turn_order_mode_ui"
-              checked={turnOrderMode === 'fixed'}
-              onChange={() => setTurnOrderMode('fixed')}
-              className="accent-indigo-600"
-            />
-            <span className="text-sm text-gray-700">固定順（参加順）</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="_turn_order_mode_ui"
-              checked={turnOrderMode === 'random'}
-              onChange={() => setTurnOrderMode('random')}
-              className="accent-indigo-600"
-            />
-            <span className="text-sm text-gray-700">ランダム順</span>
-          </label>
-        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          あなたが書く回数：{maxTurns / 2}回 / AIが書く回数：{maxTurns / 2}回
+        </p>
       </div>
 
       {state?.error && (
-        <p className="text-sm text-red-600">{state.error}</p>
+        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{state.error}</p>
       )}
 
       <SubmitButton />

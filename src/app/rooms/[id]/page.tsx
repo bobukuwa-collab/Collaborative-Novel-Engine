@@ -1,193 +1,42 @@
 import { createClient } from '@/lib/supabase/server'
 import { Header } from '@/components/layout/Header'
-import { redirect } from 'next/navigation'
-import { WaitingRoom } from '@/components/rooms/WaitingRoom'
 import { WritingRoom } from '@/components/rooms/WritingRoom'
+import { redirect } from 'next/navigation'
 
-const MEMBER_COLORS = [
-  '#6366f1', '#ec4899', '#f59e0b', '#10b981',
-  '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6',
-]
-
-export default async function RoomPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string }
-  searchParams?: Record<string, string | string[] | undefined>
-}) {
+export default async function RoomPage({ params }: { params: { id: string } }) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const { data: room, error: roomError } = await supabase
     .from('rooms')
-    .select('*')
+    .select('id, genre, max_turns, status, created_by')
     .eq('id', params.id)
     .single()
 
   if (roomError || !room) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="bg-white p-8 rounded-xl shadow max-w-md w-full">
-          <h1 className="text-red-600 font-bold mb-2">ルームが見つかりません</h1>
-          <p className="text-sm text-gray-600 mb-1">room_id: {params.id}</p>
-          <p className="text-sm text-red-500">{roomError?.message ?? 'room is null'}</p>
-        </div>
-      </main>
-    )
-  }
-
-  const { data: members, error: membersError } = await supabase
-    .from('room_members')
-    .select('user_id, join_order, color')
-    .eq('room_id', params.id)
-
-  if (membersError) console.error('[RoomPage] members error:', membersError)
-
-  const roomMembers = members ?? []
-  // RLSの問題でmembersが空の場合も created_by で作成者を判定してループ回避
-  const isMember =
-    roomMembers.some((m: { user_id: string }) => m.user_id === user.id) ||
-    room.created_by === user.id
-
-  // メンバー名を別クエリで取得
-  const userIds = roomMembers.map((m: { user_id: string }) => m.user_id)
-  const { data: userProfiles } = userIds.length > 0
-    ? await supabase.from('users').select('id, display_name').in('id', userIds)
-    : { data: [] }
-  const profileMap = new Map((userProfiles ?? []).map((u: { id: string; display_name: string }) => [u.id, u]))
-
-  // 未参加かつ待機中なら参加処理
-  if (!isMember) {
-    if (room.status !== 'waiting') {
-      return (
-        <>
-          <Header />
-          <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-            <p className="text-gray-600">このルームはすでに執筆中のため参加できません。</p>
-          </main>
-        </>
-      )
-    }
-
-    if (roomMembers.length >= room.max_players) {
-      return (
-        <>
-          <Header />
-          <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-            <p className="text-gray-600">このルームは満員です。</p>
-          </main>
-        </>
-      )
-    }
-
-    const { error: joinError } = await supabase.from('room_members').insert({
-      room_id: room.id,
-      user_id: user.id,
-      join_order: roomMembers.length,
-      color: MEMBER_COLORS[roomMembers.length % MEMBER_COLORS.length],
-    })
-
-    // 挿入成功時のみリダイレクト（失敗=既に参加済みならそのまま続行）
-    if (!joinError) redirect(`/rooms/${params.id}`)
-  }
-
-  const inviteUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001'}/rooms/${params.id}`
-  const startErrorRaw = searchParams?.startError
-  const startError = typeof startErrorRaw === 'string' ? startErrorRaw : undefined
-
-  // メンバーにプロファイルを付与
-  const membersWithProfile = roomMembers
-    .map((m: { user_id: string; join_order: number; color: string }) => ({
-      ...m,
-      users: profileMap.get(m.user_id)
-        ? { display_name: profileMap.get(m.user_id)!.display_name }
-        : null,
-    }))
-    .sort((a: { join_order: number }, b: { join_order: number }) => a.join_order - b.join_order)
-
-  // 待機中
-  if (room.status === 'waiting') {
-    const roomWithMembers = { ...room, room_members: membersWithProfile, join_code: room.join_code ?? '' }
-    const { data: themesData } = await supabase
-      .from('room_themes')
-      .select('user_id, theme_text')
-      .eq('room_id', params.id)
-    return (
       <>
         <Header />
-        <WaitingRoom
-          room={{ ...roomWithMembers, game_mode: room.game_mode ?? 'open' }}
-          currentUserId={user.id}
-          inviteUrl={inviteUrl}
-          initialThemes={themesData ?? []}
-          startError={startError}
-        />
+        <main className="min-h-screen bg-stone-50 flex items-center justify-center">
+          <p className="text-gray-600">セッションが見つかりません。</p>
+        </main>
       </>
     )
   }
 
-  // 執筆中
-  if (room.status === 'in_progress') {
-    const { data: session } = await supabase
-      .from('sessions')
-      .select('*')
-      .eq('room_id', params.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (!session) {
-      return (
-        <>
-          <Header />
-          <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-            <p className="text-gray-600">セッション情報の取得に失敗しました。</p>
-          </main>
-        </>
-      )
-    }
-
-    const [{ data: sentences }, { count: voteCount }, { data: myVoteData }, { data: themesData }, { data: allScoreRows }] =
-      await Promise.all([
-        supabase.from('sentences').select('*').eq('session_id', session.id).order('seq', { ascending: true }),
-        supabase.from('completion_votes').select('*', { count: 'exact', head: true }).eq('room_id', params.id),
-        supabase.from('completion_votes').select('user_id').eq('room_id', params.id).eq('user_id', user.id).maybeSingle(),
-        supabase.from('room_themes').select('user_id, theme_text').eq('room_id', params.id),
-        supabase.from('session_theme_scores').select('user_id, score').eq('session_id', session.id),
-      ])
-    const initialAllThemeScores = Object.fromEntries(
-      (allScoreRows ?? []).map((r: { user_id: string; score: number }) => [r.user_id, r.score])
-    )
-
+  if (room.created_by !== user.id) {
     return (
       <>
         <Header />
-        <WritingRoom
-          room={{
-            id: room.id,
-            genre: room.genre,
-            char_limit: room.char_limit,
-            timer_seconds: room.timer_seconds ?? 60,
-            turn_order_mode: room.turn_order_mode ?? 'fixed',
-            game_mode: room.game_mode ?? 'open',
-            max_turns: room.max_turns ?? 48,
-          }}
-          session={session}
-          members={membersWithProfile}
-          initialSentences={sentences ?? []}
-          currentUserId={user.id}
-          initialVoteCount={voteCount ?? 0}
-          myVoted={!!myVoteData}
-          initialThemes={themesData ?? []}
-          initialAllThemeScores={initialAllThemeScores}
-        />
+        <main className="min-h-screen bg-stone-50 flex items-center justify-center">
+          <p className="text-gray-600">アクセスできません。</p>
+        </main>
       </>
     )
   }
 
-  // 完成済み → 作品詳細ページへリダイレクト
+  // 完結済みなら小説ページへ
   if (room.status === 'completed') {
     const { data: novel } = await supabase
       .from('novels')
@@ -199,16 +48,42 @@ export default async function RoomPage({
       .single()
 
     if (novel) redirect(`/novels/${novel.id}`)
+  }
 
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('id, room_id, current_turn')
+    .eq('room_id', params.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (!session) {
     return (
       <>
         <Header />
-        <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <p className="text-gray-600">この作品はすでに完成しています。</p>
+        <main className="min-h-screen bg-stone-50 flex items-center justify-center">
+          <p className="text-gray-600">セッション情報の取得に失敗しました。</p>
         </main>
       </>
     )
   }
 
-  return null
+  const { data: sentences } = await supabase
+    .from('sentences')
+    .select('*')
+    .eq('session_id', session.id)
+    .order('seq', { ascending: true })
+
+  return (
+    <>
+      <Header />
+      <WritingRoom
+        room={{ id: room.id, genre: room.genre, max_turns: room.max_turns ?? 30 }}
+        session={session}
+        initialSentences={sentences ?? []}
+        currentUserId={user.id}
+      />
+    </>
+  )
 }

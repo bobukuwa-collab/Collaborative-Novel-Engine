@@ -1,282 +1,71 @@
 'use client'
 
-import { useState, useEffect, useRef, useTransition, useCallback } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { submitSentence, skipTurn, voteToEnd } from '@/lib/sessions/actions'
-
-// Web Speech API の型定義
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition
-    webkitSpeechRecognition: new () => SpeechRecognition
-  }
-}
-
-interface SpeechRecognition extends EventTarget {
-  lang: string
-  continuous: boolean
-  interimResults: boolean
-  onresult: ((e: SpeechRecognitionEvent) => void) | null
-  onend: (() => void) | null
-  onerror: ((e: SpeechRecognitionErrorEvent) => void) | null
-  start(): void
-  stop(): void
-}
-
-interface SpeechRecognitionEvent {
-  resultIndex: number
-  results: SpeechRecognitionResultList
-}
-
-interface SpeechRecognitionResultList {
-  length: number
-  item(index: number): SpeechRecognitionResult
-  [index: number]: SpeechRecognitionResult
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean
-  [index: number]: SpeechRecognitionAlternative
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string
-}
+import { submitSentence, finishSession } from '@/lib/sessions/actions'
 
 type Session = {
   id: string
   room_id: string
   current_turn: number
-  timer_end: string
-  max_turns?: number
-  coherence_score?: number | null
-  main_theme_score?: number | null
-  end_proposed?: boolean
-  last_scored_turn?: number
 }
 
 type Sentence = {
   id: string
   session_id: string
-  user_id: string
+  user_id: string | null
+  author_type: string
   content: string
   seq: number
   created_at: string
 }
 
-type Member = {
-  user_id: string
-  join_order: number
-  color: string
-  users: { display_name: string } | null
-}
-
-type Theme = {
-  user_id: string
-  theme_text: string
-}
-
-const HIDDEN_MAX_CHARS = 1000
-
 type Room = {
   id: string
   genre: string
-  char_limit: number | null
-  timer_seconds: number
-  turn_order_mode: string
-  game_mode: string
   max_turns: number
 }
 
 type Props = {
   room: Room
   session: Session
-  members: Member[]
   initialSentences: Sentence[]
   currentUserId: string
-  initialVoteCount: number
-  myVoted: boolean
-  initialThemes: Theme[]
-  initialAllThemeScores: Record<string, number>
 }
 
-/**
- * セッションIDをシードとした決定論的シャッフル。
- * 全クライアントが同じ乱数列を生成するので DB 保存不要。
- */
-function seededShuffle<T>(arr: T[], seed: string): T[] {
-  let hash = 0
-  for (let i = 0; i < seed.length; i++) {
-    hash = Math.imul(hash ^ seed.charCodeAt(i), 2654435761) | 0
-  }
-  const result = [...arr]
-  for (let i = result.length - 1; i > 0; i--) {
-    hash = Math.imul(hash ^ (hash >>> 16), 2246822519) | 0
-    hash = Math.imul(hash ^ (hash >>> 13), 3266489917) | 0
-    hash = (hash ^ (hash >>> 16)) >>> 0
-    const j = hash % (i + 1)
-    ;[result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
-
-export function WritingRoom({
-  room,
-  session: initialSession,
-  members,
-  initialSentences,
-  currentUserId,
-  initialVoteCount,
-  myVoted: initialMyVoted,
-  initialThemes,
-  initialAllThemeScores,
-}: Props) {
+export function WritingRoom({ room, session: initialSession, initialSentences, currentUserId: _currentUserId }: Props) {
   const router = useRouter()
   const [session, setSession] = useState(initialSession)
   const [sentences, setSentences] = useState(initialSentences)
-  const [themes, setThemes] = useState<Theme[]>(initialThemes)
-  const [allThemeScores, setAllThemeScores] = useState<Record<string, number>>(initialAllThemeScores)
   const [content, setContent] = useState('')
-  const [timeLeft, setTimeLeft] = useState(room.timer_seconds)
   const [error, setError] = useState<string | null>(null)
-  const [voteCount, setVoteCount] = useState(initialVoteCount)
-  const [myVoted, setMyVoted] = useState(initialMyVoted)
-  const [voteError, setVoteError] = useState<string | null>(null)
+  const [isAiTyping, setIsAiTyping] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const [isVoting, startVoteTransition] = useTransition()
-  const skipCalledRef = useRef(false)
-  const contentRef = useRef(content)
-  useEffect(() => { contentRef.current = content }, [content])
+  const [isFinishing, startFinishTransition] = useTransition()
   const sessionRef = useRef(session)
+  const endRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => { sessionRef.current = session }, [session])
-  const [justBecameMyTurn, setJustBecameMyTurn] = useState(false)
-  const prevTurnRef = useRef(initialSession.current_turn)
 
-  const effectiveCharLimit = room.char_limit ?? HIDDEN_MAX_CHARS
+  // current_turn が偶数 = 人間のターン（0, 2, 4...）
+  const isMyTurn = session.current_turn % 2 === 0
+  const turnNumber = Math.floor(session.current_turn / 2) + 1
+  const maxHumanTurns = Math.floor(room.max_turns / 2)
+  const progress = Math.min(100, (turnNumber / maxHumanTurns) * 100)
+  const isCompleted = session.current_turn >= room.max_turns
 
-  // 音声入力
-  const [isListening, setIsListening] = useState(false)
-  const [speechError, setSpeechError] = useState<string | null>(null)
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
-  const isSpeechSupported = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop()
-    setIsListening(false)
-  }, [])
-
-  const toggleListening = useCallback(() => {
-    if (isListening) {
-      stopListening()
-      return
-    }
-    const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition
-    const recognition = new SpeechRecognitionCtor()
-    recognition.lang = 'ja-JP'
-    recognition.continuous = false
-    recognition.interimResults = false
-
-    recognition.onresult = (e: SpeechRecognitionEvent) => {
-      const transcript = e.results[e.resultIndex][0].transcript
-      setContent((prev) => (prev + transcript).slice(0, effectiveCharLimit))
-      setSpeechError(null)
-    }
-    recognition.onend = () => setIsListening(false)
-    recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
-      setSpeechError(e.error === 'not-allowed' ? 'マイクの使用が許可されていません' : `音声認識エラー: ${e.error}`)
-      setIsListening(false)
-    }
-
-    recognitionRef.current = recognition
-    recognition.start()
-    setIsListening(true)
-    setSpeechError(null)
-  }, [isListening, stopListening, effectiveCharLimit])
-
-  // ターン順を決定（random モードはセッションIDをシードにシャッフル）
-  const sortedMembers = [...members].sort((a, b) => a.join_order - b.join_order)
-  const orderedMembers = room.turn_order_mode === 'random'
-    ? seededShuffle(sortedMembers, session.id)
-    : sortedMembers
-  const memberCount = orderedMembers.length
-  const threshold = memberCount === 2 ? 2 : Math.floor(memberCount / 2) + 1
-  const maxTurnCap = session.max_turns ?? room.max_turns
-  const turnLocked = session.current_turn >= maxTurnCap
-  const currentMemberIndex = session.current_turn % memberCount
-  const currentMember = orderedMembers[currentMemberIndex]
-  const isMyTurn = currentMember?.user_id === currentUserId
-  const isSecret = room.game_mode === 'secret_battle'
-  const myThemeRow = themes.find((t) => t.user_id === currentUserId)
-  const currentWritersTheme = themes.find((t) => t.user_id === currentMember?.user_id)
-  const themeLineForIndicator = isSecret
-    ? (isMyTurn ? myThemeRow?.theme_text : undefined)
-    : currentWritersTheme?.theme_text
-
-  // ターン切り替え時に音声認識を停止
+  // 新しい文章が追加されたらスクロール
   useEffect(() => {
-    if (!isMyTurn) stopListening()
-  }, [isMyTurn, stopListening])
+    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [sentences])
 
-  // ターン変化を検知して通知
+  // AI ターン中はタイピングインジケーター表示
   useEffect(() => {
-    if (session.current_turn !== prevTurnRef.current) {
-      prevTurnRef.current = session.current_turn
-      if (isMyTurn) {
-        setJustBecameMyTurn(true)
-        const t = setTimeout(() => setJustBecameMyTurn(false), 3000)
-        return () => clearTimeout(t)
-      }
-    }
-  }, [session.current_turn, isMyTurn])
+    setIsAiTyping(!isMyTurn && !isCompleted)
+  }, [isMyTurn, isCompleted])
 
-  // 周回数・ターン数
-  const roundNumber = Math.floor(session.current_turn / memberCount) + 1
-  const turnInRound = (session.current_turn % memberCount) + 1
-
-  useEffect(() => {
-    skipCalledRef.current = false
-    setError(null)
-  }, [session.current_turn])
-
-  // タイマーカウントダウン
-  useEffect(() => {
-    const update = () => {
-      const remaining = Math.max(
-        0,
-        Math.floor((new Date(session.timer_end).getTime() - Date.now()) / 1000),
-      )
-      setTimeLeft(remaining)
-    }
-    update()
-    const interval = setInterval(update, 500)
-    return () => clearInterval(interval)
-  }, [session.timer_end])
-
-  // タイムアウト時の自動送信 or スキップ
-  useEffect(() => {
-    if (timeLeft === 0 && isMyTurn && !skipCalledRef.current && !turnLocked) {
-      skipCalledRef.current = true
-      const currentContent = contentRef.current.trim().slice(0, effectiveCharLimit)
-      startTransition(async () => {
-        if (currentContent) {
-          const result = await submitSentence(
-            session.id, currentContent, session.current_turn,
-            effectiveCharLimit, room.timer_seconds,
-          )
-          if (!result?.error) setContent('')
-        } else {
-          await skipTurn(session.id, session.current_turn, room.timer_seconds)
-        }
-      })
-    }
-  }, [timeLeft, isMyTurn, session.id, session.current_turn, room.timer_seconds, effectiveCharLimit, turnLocked])
-
-  // Realtime 購読
+  // Realtime 購読（文章追加・セッション更新）
   useEffect(() => {
     const supabase = createClient()
 
@@ -285,275 +74,187 @@ export function WritingRoom({
       .on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'sessions',
         filter: `room_id=eq.${room.id}`,
-      }, (payload) => setSession(payload.new as Session))
+      }, (payload) => {
+        if (isSessionPayload(payload.new)) setSession(payload.new)
+      })
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'sentences',
         filter: `session_id=eq.${initialSession.id}`,
-      }, (payload) => setSentences((prev) => [...prev, payload.new as Sentence]))
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'completion_votes',
-        filter: `room_id=eq.${room.id}`,
-      }, () => setVoteCount((prev) => prev + 1))
-      .on('postgres_changes', {
-        event: 'INSERT', schema: 'public', table: 'novels',
-        filter: `room_id=eq.${room.id}`,
-      }, (payload) => router.push(`/novels/${payload.new.id}`))
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'room_themes',
-        filter: `room_id=eq.${room.id}`,
       }, (payload) => {
-        const updated = payload.new as Theme
-        setThemes((prev) => {
-          const exists = prev.some((t) => t.user_id === updated.user_id)
-          return exists
-            ? prev.map((t) => t.user_id === updated.user_id ? updated : t)
-            : [...prev, updated]
-        })
-      })
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'session_theme_scores',
-        filter: `session_id=eq.${initialSession.id}`,
-      }, (payload) => {
-        const row = payload.new as { user_id?: string; score?: number }
-        if (row.user_id && typeof row.score === 'number') {
-          setAllThemeScores((prev) => ({ ...prev, [row.user_id!]: row.score! }))
+        if (isSentencePayload(payload.new)) {
+          setSentences((prev) => {
+            if (prev.some((s) => s.id === (payload.new as Sentence).id)) return prev
+            return [...prev, payload.new as Sentence]
+          })
+          setIsAiTyping(false)
         }
       })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [room.id, initialSession.id, router, currentUserId])
+  }, [room.id, initialSession.id])
 
-  // ポーリングフォールバック（Realtime 取りこぼし対策、3秒ごと）
+  // ポーリングフォールバック（3秒ごと）
   useEffect(() => {
     const supabase = createClient()
     const poll = setInterval(async () => {
       const { data } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('id', initialSession.id)
-        .maybeSingle()
+        .from('sessions').select('*').eq('id', initialSession.id).maybeSingle()
       if (data && data.current_turn !== sessionRef.current.current_turn) {
         setSession(data as Session)
         const { data: rows } = await supabase
-          .from('sentences')
-          .select('*')
-          .eq('session_id', initialSession.id)
-          .order('seq', { ascending: true })
-        if (rows) setSentences(rows as Sentence[])
+          .from('sentences').select('*').eq('session_id', initialSession.id).order('seq', { ascending: true })
+        // Realtime で追加済みの文章を古いスナップショットで上書きしないよう件数チェック
+        if (rows) setSentences((prev) => rows.length >= prev.length ? rows as Sentence[] : prev)
       }
-      const { data: novelData } = await supabase
-        .from('novels')
-        .select('id')
-        .eq('room_id', room.id)
-        .eq('status', 'completed')
-        .maybeSingle()
-      if (novelData) router.push(`/novels/${novelData.id}`)
+      // 完結済みリダイレクト
+      const { data: novel } = await supabase
+        .from('novels').select('id').eq('room_id', room.id).eq('status', 'completed').maybeSingle()
+      if (novel) router.push(`/novels/${novel.id}`)
     }, 3000)
     return () => clearInterval(poll)
   }, [initialSession.id, room.id, router])
-
-  const handleVote = () => {
-    setVoteError(null)
-    startVoteTransition(async () => {
-      const result = await voteToEnd(room.id)
-      if (result?.error) {
-        setVoteError(result.error)
-      } else {
-        setMyVoted(true)
-      }
-    })
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!content.trim() || !isMyTurn || isPending) return
     setError(null)
+    setIsAiTyping(true)
+    const submitted = content.trim()
+    setContent('')
     startTransition(async () => {
-      const result = await submitSentence(
-        session.id, content.trim(), session.current_turn,
-        effectiveCharLimit, room.timer_seconds,
-      )
-      if (result?.error) setError(result.error)
-      else setContent('')
+      const result = await submitSentence(session.id, submitted, session.current_turn)
+      if (result?.error) {
+        setError(result.error)
+        setContent(submitted)
+        setIsAiTyping(false)
+      }
     })
   }
 
+  const handleFinish = () => {
+    startFinishTransition(async () => {
+      await finishSession(room.id, session.id)
+    })
+  }
+
+  const phase = getStoryPhase(session.current_turn, room.max_turns)
+
   return (
-    <main className="min-h-screen bg-stone-100 py-8 px-4">
+    <main className="min-h-screen bg-stone-50 py-6 px-4">
       <div className="max-w-2xl mx-auto space-y-4">
 
         {/* ヘッダー */}
-        <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-stone-400">カテゴリ</p>
-            <h1 className="font-bold text-stone-800">{room.genre}</h1>
-            <p className="text-xs text-stone-400 mt-0.5">
-              ターン {session.current_turn + 1} / 上限 {maxTurnCap}
-              {isSecret ? ' · 秘密テーマ対戦' : ''}
-            </p>
-          </div>
-          <TimerDisplay timeLeft={timeLeft} total={room.timer_seconds} />
-        </div>
-
-        {session.end_proposed && (
-          <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3">
-            早期終了が提案されています（スコア・完成度またはターン上限）。全員で完結に投票できます。
-          </div>
-        )}
-
-        {(typeof session.coherence_score === 'number' || typeof session.main_theme_score === 'number') && (
-          <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-3 text-xs text-stone-500 flex flex-wrap gap-4">
-            {typeof session.coherence_score === 'number' && (
-              <span>物語の完成度: <span className="font-semibold text-stone-700">{session.coherence_score}</span> / 100</span>
-            )}
-            {typeof session.main_theme_score === 'number' && (
-              <span>メインテーマ一致度: <span className="font-semibold text-stone-700">{session.main_theme_score}</span> / 100</span>
-            )}
-          </div>
-        )}
-
-        {Object.keys(allThemeScores).length > 0 && (
-          <BattleGauge members={orderedMembers} allThemeScores={allThemeScores} currentUserId={currentUserId} />
-        )}
-
-        {/* 物語フェーズヒント */}
-        {(() => {
-          const phase = getStoryPhase(session.current_turn, maxTurnCap)
-          return (
-            <div className={`border rounded-xl px-3 py-2 flex items-center gap-2 text-xs ${phase.color}`}>
-              <span className="font-bold shrink-0">[{phase.label}]</span>
-              <span>{phase.hint}</span>
-            </div>
-          )
-        })()}
-
-        {/* あなたのターン通知 */}
-        {justBecameMyTurn && (
-          <div className="bg-slate-800 text-white text-center text-sm font-bold rounded-xl px-4 py-3 animate-pulse shadow-lg">
-            🎯 あなたのターンです！
-          </div>
-        )}
-
-        {/* ターン表示 + テーマ */}
-        <TurnIndicator
-          currentMember={currentMember}
-          isMyTurn={isMyTurn}
-          turnNumber={session.current_turn + 1}
-          roundNumber={roundNumber}
-          turnInRound={turnInRound}
-          memberCount={memberCount}
-          currentTheme={themeLineForIndicator}
-          isSecret={isSecret}
-        />
-
-        {isSecret && myThemeRow && (
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm">
-            <p className="text-xs text-slate-500 font-semibold mb-1">あなただけの秘密テーマ</p>
-            <p className="text-stone-800 font-medium">「{myThemeRow.theme_text}」</p>
-          </div>
-        )}
-
-        {/* テーマ一覧（オープンで設定済みの場合） */}
-        {!isSecret && themes.length > 0 && (
-          <ThemePanel themes={themes} members={orderedMembers} currentUserId={currentUserId} />
-        )}
-
-        {/* 完結投票 */}
-        <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-4">
-          <div className="flex items-center justify-between">
+        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-4">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-xs text-stone-400 mb-1">完結投票</p>
-              <p className="text-sm text-stone-700">
-                <span className="font-bold text-slate-700">{voteCount}</span>
-                <span className="text-stone-400"> / {memberCount}人</span>
-                　（{threshold}票で完結）
-              </p>
-              <div className="mt-2 w-40 h-1.5 bg-stone-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-slate-500 rounded-full transition-all"
-                  style={{ width: `${Math.min(100, (voteCount / threshold) * 100)}%` }}
-                />
-              </div>
+              <p className="text-xs text-stone-400 uppercase tracking-wide">ジャンル</p>
+              <h1 className="font-bold text-stone-800 text-lg">{room.genre}</h1>
             </div>
-            <div className="flex flex-col items-end gap-1">
-              <button
-                onClick={handleVote}
-                disabled={myVoted || isVoting || sentences.length === 0}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  myVoted
-                    ? 'bg-stone-100 text-stone-400 cursor-default'
-                    : 'bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed'
-                }`}
-              >
-                {myVoted ? '投票済み ✓' : isVoting ? '投票中...' : '完結に投票'}
-              </button>
-              {voteError && <p className="text-xs text-red-500">{voteError}</p>}
+            <button
+              onClick={handleFinish}
+              disabled={isFinishing || sentences.length < 2}
+              className="px-4 py-2 text-sm font-semibold text-stone-600 border border-stone-200 rounded-lg hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {isFinishing ? '完結処理中...' : '完結して占う'}
+            </button>
+          </div>
+
+          {/* 進捗バー */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-stone-400">
+              <span>あなたのターン {turnNumber} / {maxHumanTurns}</span>
+              <span className={`font-medium ${phase.textColor}`}>{phase.label}</span>
+            </div>
+            <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${phase.barColor}`}
+                style={{ width: `${progress}%` }}
+              />
             </div>
           </div>
         </div>
 
-        <NovelViewer sentences={sentences} members={sortedMembers} />
+        {/* 物語本文 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 p-5 min-h-64 max-h-[28rem] overflow-y-auto">
+          {sentences.length === 0 ? (
+            <p className="text-stone-400 text-sm text-center py-8">最初の一文を書いてください。AIが続きを書きます。</p>
+          ) : (
+            <div className="space-y-4" style={{ fontFamily: '"Noto Serif JP", Georgia, serif' }}>
+              {[...sentences].sort((a, b) => a.seq - b.seq).map((s) => (
+                <div
+                  key={s.id}
+                  className={`relative pl-4 border-l-2 ${s.author_type === 'human' ? 'border-indigo-400' : 'border-stone-300'}`}
+                >
+                  <p className="text-stone-800 text-[0.95rem] leading-[2] whitespace-pre-wrap">{s.content}</p>
+                  <p className="text-xs mt-0.5" style={{ color: s.author_type === 'human' ? '#818cf8' : '#a8a29e' }}>
+                    {s.author_type === 'human' ? 'あなた' : 'AI'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
 
-        {/* 入力欄 */}
-        {turnLocked ? (
-          <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 text-center text-sm text-stone-500">
-            最大ターンに達しました。完結に投票して作品をまとめてください。
+          {isAiTyping && (
+            <div className="flex items-center gap-2 mt-4 pl-4 border-l-2 border-stone-300">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="text-xs text-stone-400">AIが執筆中...</span>
+            </div>
+          )}
+
+          <div ref={endRef} />
+        </div>
+
+        {/* 入力エリア */}
+        {isCompleted ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center space-y-3">
+            <p className="text-amber-800 font-semibold">物語が完成しました！</p>
+            <button
+              onClick={handleFinish}
+              disabled={isFinishing}
+              className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
+              {isFinishing ? '人格を分析中...' : '人格を占う'}
+            </button>
           </div>
         ) : isMyTurn ? (
-          <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-stone-200 p-4 space-y-3">
-            <div className="flex justify-between text-xs text-stone-500">
-              <span className="text-slate-600 font-medium">あなたのターンです！</span>
-              <span className={content.length > effectiveCharLimit ? 'text-red-500' : ''}>
-                {content.length} / {room.char_limit === null ? '∞' : `${effectiveCharLimit}文字`}
-              </span>
+          <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-indigo-200 p-4 space-y-3">
+            <div className="flex justify-between text-xs">
+              <span className="text-indigo-600 font-semibold">あなたのターンです</span>
+              <span className="text-stone-400">{content.length} / 1000文字</span>
             </div>
-            <div className="relative">
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder={isListening ? '🎤 聞き取り中...' : '続きを書いてください...'}
-                rows={5}
-                maxLength={effectiveCharLimit}
-                disabled={isPending}
-                className={`w-full border rounded-md px-3 py-2 text-sm text-stone-800 focus:outline-none focus:ring-2 resize-none pr-10 ${
-                  isListening
-                    ? 'border-red-300 focus:ring-red-200'
-                    : 'border-stone-200 focus:ring-slate-400'
-                }`}
-              />
-              {isSpeechSupported && (
-                <button
-                  type="button"
-                  onClick={toggleListening}
-                  title={isListening ? '音声入力を停止' : '音声入力を開始'}
-                  className={`absolute right-2 top-2 p-1.5 rounded-md transition-colors ${
-                    isListening
-                      ? 'text-red-500 bg-red-50 hover:bg-red-100 animate-pulse'
-                      : 'text-stone-400 hover:text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  🎤
-                </button>
-              )}
-            </div>
-            {speechError && <p className="text-xs text-red-500">{speechError}</p>}
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={`${room.genre}の物語を続けてください...`}
+              rows={4}
+              maxLength={1000}
+              disabled={isPending}
+              className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+            />
             {error && <p className="text-xs text-red-500">{error}</p>}
             <button
               type="submit"
-              disabled={isPending || !content.trim() || content.length > effectiveCharLimit}
-              className="w-full py-2 bg-slate-700 text-white font-semibold rounded-md hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+              disabled={isPending || !content.trim()}
+              className="w-full py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm"
             >
-              {isPending ? '投稿中...' : '投稿する'}
+              {isPending ? '送信中...' : '投稿してAIに渡す'}
             </button>
           </form>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-stone-200 p-4 text-center text-sm text-stone-500">
-            <span
-              className="inline-block w-2 h-2 rounded-full mr-2 align-middle"
-              style={{ backgroundColor: currentMember?.color ?? '#9ca3af' }}
-            />
-            {currentMember?.users?.display_name ?? '不明'}さんの入力を待っています...
+          <div className="bg-stone-50 border border-stone-200 rounded-2xl p-5 text-center">
+            <div className="flex items-center justify-center gap-2 text-stone-500 text-sm">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span>AIが執筆中です。しばらくお待ちください...</span>
+            </div>
           </div>
         )}
       </div>
@@ -561,190 +262,22 @@ export function WritingRoom({
   )
 }
 
-function BattleGauge({ members, allThemeScores, currentUserId }: {
-  members: Member[]
-  allThemeScores: Record<string, number>
-  currentUserId: string
-}) {
-  const scored = members.filter((m) => allThemeScores[m.user_id] !== undefined)
-  if (scored.length === 0) return null
-  const total = scored.reduce((sum, m) => sum + (allThemeScores[m.user_id] ?? 0), 0) || 1
-
-  if (scored.length === 2) {
-    const [p1, p2] = scored
-    const pct1 = Math.round(((allThemeScores[p1.user_id] ?? 0) / total) * 100)
-    const pct2 = 100 - pct1
-    return (
-      <div className="bg-white rounded-xl shadow p-4 space-y-2">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">⚡ バトルボルテージ</p>
-        <div className="flex items-center justify-between text-xs font-medium">
-          <span style={{ color: p1.color }}>{p1.users?.display_name ?? '不明'}{p1.user_id === currentUserId ? ' ★' : ''}</span>
-          <span style={{ color: p2.color }}>{p2.users?.display_name ?? '不明'}{p2.user_id === currentUserId ? ' ★' : ''}</span>
-        </div>
-        <div className="h-6 rounded-full overflow-hidden flex">
-          <div className="h-full flex items-center justify-center text-white text-xs font-bold transition-all duration-700"
-            style={{ width: `${pct1}%`, backgroundColor: p1.color }}>
-            {pct1 > 15 && `${pct1}%`}
-          </div>
-          <div className="h-full flex items-center justify-center text-white text-xs font-bold transition-all duration-700"
-            style={{ width: `${pct2}%`, backgroundColor: p2.color }}>
-            {pct2 > 15 && `${pct2}%`}
-          </div>
-        </div>
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <span>{allThemeScores[p1.user_id] ?? 0}pt</span>
-          <span>{allThemeScores[p2.user_id] ?? 0}pt</span>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-white rounded-xl shadow p-4 space-y-3">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">⚡ バトルボルテージ</p>
-      {scored.map((m) => {
-        const score = allThemeScores[m.user_id] ?? 0
-        const pct = Math.round((score / total) * 100)
-        return (
-          <div key={m.user_id} className="flex items-center gap-3">
-            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
-            <span className="text-xs text-gray-600 w-20 truncate">
-              {m.users?.display_name ?? '不明'}{m.user_id === currentUserId ? ' ★' : ''}
-            </span>
-            <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${pct}%`, backgroundColor: m.color }} />
-            </div>
-            <span className="text-xs font-bold text-gray-700 w-8 text-right">{score}pt</span>
-          </div>
-        )
-      })}
-    </div>
-  )
+function isSessionPayload(v: unknown): v is Session {
+  return typeof v === 'object' && v !== null &&
+    'id' in v && 'room_id' in v && 'current_turn' in v
 }
 
-type PhaseInfo = { label: string; hint: string; color: string }
+function isSentencePayload(v: unknown): v is Sentence {
+  return typeof v === 'object' && v !== null &&
+    'id' in v && 'content' in v && 'seq' in v && 'author_type' in v
+}
+
+type PhaseInfo = { label: string; barColor: string; textColor: string }
 
 function getStoryPhase(currentTurn: number, maxTurns: number): PhaseInfo {
   const ratio = maxTurns > 0 ? currentTurn / maxTurns : 0
-  if (ratio < 0.25) return { label: '導入', hint: '人物・状況・世界観を丁寧に描きましょう', color: 'text-sky-600 bg-sky-50 border-sky-200' }
-  if (ratio < 0.55) return { label: '展開', hint: '出来事を動かし、登場人物の関係を深めましょう', color: 'text-emerald-600 bg-emerald-50 border-emerald-200' }
-  if (ratio < 0.80) return { label: 'クライマックス', hint: '物語の山場へ向けて盛り上げましょう', color: 'text-orange-600 bg-orange-50 border-orange-200' }
-  return { label: '解決', hint: '伏線を回収し、結末へ向かいましょう', color: 'text-purple-600 bg-purple-50 border-purple-200' }
-}
-
-function TimerDisplay({ timeLeft, total }: { timeLeft: number; total: number }) {
-  const isWarning = timeLeft <= Math.min(10, total * 0.2)
-  const pct = Math.max(0, timeLeft / total)
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <div className={`text-2xl font-mono font-bold tabular-nums ${isWarning ? 'text-red-500' : 'text-stone-700'}`}>
-        {timeLeft}秒
-      </div>
-      <div className="w-20 h-1.5 bg-stone-200 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${isWarning ? 'bg-red-400' : 'bg-slate-500'}`}
-          style={{ width: `${pct * 100}%` }}
-        />
-      </div>
-    </div>
-  )
-}
-
-function TurnIndicator({
-  currentMember,
-  isMyTurn,
-  turnNumber,
-  roundNumber,
-  turnInRound,
-  memberCount,
-  currentTheme,
-  isSecret,
-}: {
-  currentMember: Member | undefined
-  isMyTurn: boolean
-  turnNumber: number
-  roundNumber: number
-  turnInRound: number
-  memberCount: number
-  currentTheme: string | undefined
-  isSecret: boolean
-}) {
-  return (
-    <div className={`rounded-xl shadow-sm p-3 space-y-1 ${isMyTurn ? 'bg-slate-50 border border-slate-300' : 'bg-white border border-stone-200'}`}>
-      <div className="flex items-center gap-3">
-        <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: currentMember?.color ?? '#9ca3af' }} />
-        <span className="text-sm font-medium text-stone-700">
-          第{roundNumber}周 {turnInRound}/{memberCount}　ターン{turnNumber}：
-          {isMyTurn
-            ? <span className="text-slate-700 font-bold"> あなたのターン！</span>
-            : <span> {currentMember?.users?.display_name ?? '不明'}さん</span>}
-        </span>
-      </div>
-      {currentTheme && (
-        <p className="text-xs text-stone-500 pl-7">
-          テーマ：<span className="font-medium text-stone-700">「{currentTheme}」</span>
-        </p>
-      )}
-      {isSecret && !isMyTurn && (
-        <p className="text-xs text-stone-400 pl-7">相手のテーマは非公開です。</p>
-      )}
-    </div>
-  )
-}
-
-function ThemePanel({ themes, members, currentUserId }: {
-  themes: Theme[]
-  members: Member[]
-  currentUserId: string
-}) {
-  return (
-    <div className="bg-white rounded-xl shadow p-4">
-      <h2 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">各自のテーマ</h2>
-      <div className="flex flex-wrap gap-2">
-        {members.map((m) => {
-          const theme = themes.find((t) => t.user_id === m.user_id)
-          if (!theme) return null
-          const isMe = m.user_id === currentUserId
-          return (
-            <div
-              key={m.user_id}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${isMe ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-50 border border-gray-200'}`}
-            >
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
-              <span className="text-gray-500">{m.users?.display_name ?? '不明'}：</span>
-              <span className="font-medium text-gray-800">「{theme.theme_text}」</span>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function NovelViewer({ sentences, members }: { sentences: Sentence[]; members: Member[] }) {
-  const memberMap = new Map(members.map((m) => [m.user_id, m]))
-  const sorted = [...sentences].sort((a, b) => a.seq - b.seq)
-
-  return (
-    <div className="bg-white rounded-xl shadow p-4 min-h-48 max-h-[32rem] overflow-y-auto">
-      <h2 className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">本文</h2>
-      {sorted.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-4">まだ投稿がありません。最初の段落を書きましょう！</p>
-      ) : (
-        <div className="space-y-4 font-serif">
-          {sorted.map((sentence) => {
-            const member = memberMap.get(sentence.user_id)
-            return (
-              <div key={sentence.id} className="relative pl-3 border-l-2" style={{ borderColor: member?.color ?? '#9ca3af' }}>
-                <p className="text-gray-900 text-base leading-8 whitespace-pre-wrap">{sentence.content}</p>
-                <p className="text-xs text-gray-400 mt-1">{member?.users?.display_name ?? '不明'}</p>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
+  if (ratio < 0.25) return { label: '導入', barColor: 'bg-sky-400', textColor: 'text-sky-600' }
+  if (ratio < 0.55) return { label: '展開', barColor: 'bg-emerald-500', textColor: 'text-emerald-600' }
+  if (ratio < 0.80) return { label: 'クライマックス', barColor: 'bg-orange-500', textColor: 'text-orange-600' }
+  return { label: '結末', barColor: 'bg-purple-500', textColor: 'text-purple-600' }
 }
